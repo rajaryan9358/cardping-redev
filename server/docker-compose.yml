@@ -1,0 +1,12 @@
+# Runs just the CardPing app container. Supabase is a hosted/managed
+# service (or your own separately-run instance) — this project doesn't
+# self-host Postgres. Point SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY in .env
+# at whichever Supabase project you're using.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env

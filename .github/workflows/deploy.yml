@@ -1,0 +1,51 @@
+name: Deploy
+
+# Deploys to the Hostinger VPS on every push to main, after the exact same
+# typecheck/build gate as ci.yml — a red build never reaches the VPS.
+# See docs/CI_CD.md for the GitHub secrets this needs, and
+# docs/HOSTINGER_VPS_SETUP.md for one-time server setup this depends on
+# (the deploy path already git-cloned, Node + PM2 installed, the deploy
+# user's public key already in the runner's known VPS).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            git fetch origin main
+            git reset --hard origin/main
+            cd server
+            npm ci --omit=dev
+            npm run build
+            pm2 startOrReload ecosystem.config.js --update-env
+            pm2 save

@@ -1,0 +1,16 @@
+# Node
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Secrets — never commit
+server/.env
+server/.env.*
+!server/.env.example
+
+# Original n8n export contains live/rotatable secrets (Telegram bot token,
+# Google OAuth client secret, decoded JWTs, ...) — kept locally as
+# reference material only. Remove this line if you deliberately want it
+# tracked (after rotating/scrubbing the secrets in it).
+old-project/

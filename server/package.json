@@ -1,0 +1,36 @@
+{
+  "name": "cardping-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CardPing standalone bot server (WhatsApp Cloud API + Telegram, Supabase backend)",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "typecheck": "tsc --noEmit",
+    "register:telegram-webhook": "tsx scripts/register-telegram-webhook.ts",
+    "unregister:telegram-webhook": "tsx scripts/register-telegram-webhook.ts --delete"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "openai": "^4.68.1",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.16.11",
+    "pino-pretty": "^11.2.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
