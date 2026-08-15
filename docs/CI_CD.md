@@ -23,11 +23,18 @@ Runs on every push to `main` (or manually, via the "Run workflow" button — it 
    git fetch origin main
    git reset --hard origin/main
    cd server
-   npm ci --omit=dev
+   npm ci
    npm run build
+   npm prune --omit=dev
    pm2 startOrReload ecosystem.config.js --update-env
    pm2 save
    ```
+   `npm ci` installs everything, including `typescript` — `tsc` needs to be present to run `npm run
+   build` at all. `npm prune --omit=dev` then strips `devDependencies` back out once the compiled
+   `dist/` exists, so the `node_modules` PM2 actually runs against stays lean. (An earlier version
+   of this script ran `npm ci --omit=dev` up front, which skipped `typescript` entirely and made
+   every deploy fail at the build step with `tsc: not found`.)
+
    `pm2 startOrReload` starts the app if it isn't running yet, or reloads it in place if it is —
    the same command works for the very first deploy and every one after.
 

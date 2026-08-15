@@ -45,7 +45,8 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             cd server
-            npm ci --omit=dev
+            npm ci
             npm run build
+            npm prune --omit=dev
             pm2 startOrReload ecosystem.config.js --update-env
             pm2 save
