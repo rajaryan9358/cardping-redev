@@ -99,6 +99,13 @@ Confirm it's up: `curl http://localhost:3000/health` should return `{"ok":true,.
 
 ## 8. nginx reverse proxy + TLS
 
+Both apps in this repo share one domain and one nginx host: `server/` (Express, port 3000)
+answers the webhook/OAuth paths that are registered with WhatsApp/Telegram/Google/Cashfree, and
+`dashboard/` (Next.js, port 3100) answers everything else. Route by exact path, not by prefix —
+the five backend paths below are the *complete* list (grep `server/src/routes/*.ts` for
+`router.(get|post)` if that ever changes), so anything not matching one of them falls through to
+the dashboard.
+
 ```bash
 sudo apt install -y nginx certbot python3-certbot-nginx
 ```
@@ -109,8 +116,15 @@ Create `/etc/nginx/sites-available/cardping`:
 server {
     listen 80;
     server_name cardping.example.com;
+
+    location = /health { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /webhooks/whatsapp { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /webhooks/telegram { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /webhooks/cashfree { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+    location = /oauth/google/callback { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3100;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -124,7 +138,26 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d cardpingv2.rankkking.com
 ```
 
-Confirm: `https://cardping.example.com/health` from your own machine.
+Confirm: `https://cardping.example.com/health` from your own machine (backend), and that the bare
+domain loads the dashboard's `/login` page.
+
+### Deploying the dashboard onto a server already provisioned for the backend only
+
+If steps 1–7 were done before `dashboard/` existed in this repo, retrofit it without repeating
+the whole walkthrough:
+
+```bash
+cd /var/www/cardping/dashboard
+npm ci
+npm run build
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+Then update the nginx config to the split-routing version above (`sudo nginx -t && sudo systemctl
+reload nginx` after editing) — `deploy.yml` only re-runs `npm ci && npm run build` and
+`pm2 startOrReload` on every push to `main`; it doesn't touch nginx, so this one-time routing
+change has to be made by hand.
 
 ## 9. Register the webhooks
 

@@ -1,8 +1,9 @@
 name: CI
 
-# Validates every push and pull request: install, typecheck, build. This is
-# the gate deploy.yml's `build` job also runs before ever touching the VPS —
-# see that workflow for the actual deploy step.
+# Validates every push and pull request: install, typecheck, build — for
+# both apps in this repo. This is the gate deploy.yml's `build` jobs also
+# run before ever touching the VPS — see that workflow for the actual
+# deploy step.
 on:
   push:
     branches: ["**"]
@@ -11,9 +12,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [server, dashboard]
     defaults:
       run:
-        working-directory: server
+        working-directory: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +25,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
 
       - run: npm ci
       - run: npm run typecheck

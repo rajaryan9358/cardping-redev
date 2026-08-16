@@ -14,3 +14,10 @@ server/.env.*
 # reference material only. Remove this line if you deliberately want it
 # tracked (after rotating/scrubbing the secrets in it).
 old-project/
+
+# Figma design reference screenshots — used to build dashboard/, not needed
+# at runtime or in the repo history.
+des/
+
+# Playwright MCP browser-testing artifacts (screenshots, traces).
+.playwright-mcp/

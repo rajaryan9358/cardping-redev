@@ -2,10 +2,12 @@ name: Deploy
 
 # Deploys to the Hostinger VPS on every push to main, after the exact same
 # typecheck/build gate as ci.yml — a red build never reaches the VPS.
-# See docs/CI_CD.md for the GitHub secrets this needs, and
-# docs/HOSTINGER_VPS_SETUP.md for one-time server setup this depends on
-# (the deploy path already git-cloned, Node + PM2 installed, the deploy
-# user's public key already in the runner's known VPS).
+# Both apps live behind the same nginx host (cardpingv2.rankkking.com):
+# server/ answers the webhook/OAuth paths, dashboard/ answers everything
+# else — see docs/HOSTINGER_VPS_SETUP.md for the nginx routing and
+# one-time server setup this depends on (the deploy path already git
+# cloned, Node + PM2 installed, the deploy user's public key already in
+# the runner's known VPS).
 on:
   push:
     branches: [main]
@@ -14,16 +16,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [server, dashboard]
     defaults:
       run:
-        working-directory: server
+        working-directory: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
@@ -44,9 +49,17 @@ jobs:
             cd ${{ secrets.VPS_DEPLOY_PATH }}
             git fetch origin main
             git reset --hard origin/main
+
             cd server
             npm ci
             npm run build
             npm prune --omit=dev
             pm2 startOrReload ecosystem.config.js --update-env
+
+            cd ../dashboard
+            npm ci
+            npm run build
+            npm prune --omit=dev
+            pm2 startOrReload ecosystem.config.js --update-env
+
             pm2 save
