@@ -6,7 +6,7 @@ broadcasts and proactive account notifications, track subscription bookkeeping, 
 `server/`'s and `dashboard/`'s environment variables — all from a browser instead of SSH.
 
 It is **not** part of the customer-facing product. There's no link to it from `dashboard/`, it's
-deployed on its own subdomain (see [HOSTINGER_VPS_SETUP.md §11](./HOSTINGER_VPS_SETUP.md#11-deploy-the-admin-app)),
+deployed at the `/admin` path on the main domain (see [HOSTINGER_VPS_SETUP.md §11](./HOSTINGER_VPS_SETUP.md#11-deploy-the-admin-app)),
 and staff accounts are provisioned by hand — there's no signup flow.
 
 ## Why a separate app, not a page in the dashboard

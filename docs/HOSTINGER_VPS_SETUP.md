@@ -99,12 +99,12 @@ Confirm it's up: `curl http://localhost:3000/health` should return `{"ok":true,.
 
 ## 8. nginx reverse proxy + TLS
 
-`server/` (Express, port 3000) and `dashboard/` (Next.js, port 3100) share one domain and one
-nginx host. `admin/` (Next.js, port 3200) is deliberately on its own subdomain instead — see
-[step 11](#11-deploy-the-admin-app) — so it's never linked from or discoverable via the
-customer-facing apps. On the shared domain, route by exact path, not by prefix — the five backend
-paths below are the *complete* list (grep `server/src/routes/*.ts` for `router.(get|post)` if that
-ever changes), so anything not matching one of them falls through to the dashboard.
+All three apps share one domain and one nginx host: `server/` (Express, port 3000) and
+`dashboard/` (Next.js, port 3100) on the root paths, `admin/` (Next.js, port 3200) at the `/admin`
+prefix — see [step 11](#11-deploy-the-admin-app). On the shared domain, route the backend by exact
+path, not by prefix — the five backend paths below are the *complete* list (grep
+`server/src/routes/*.ts` for `router.(get|post)` if that ever changes), so anything not matching
+one of them, and not under `/admin`, falls through to the dashboard.
 
 ```bash
 sudo apt install -y nginx certbot python3-certbot-nginx
@@ -292,12 +292,9 @@ fresh key instead of only revoking, repeat Steps 1–4 with a new filename and u
 ## 11. Deploy the admin app
 
 `admin/` is staff-only tooling (users, cards, events, bot health, broadcasts, env variables, audit
-log) — direct-to-Supabase, no self-registration. It's deliberately on its **own subdomain** (e.g.
-`admin.cardpingv2.rankkking.com`), not a path on the main domain, so it's never linked from or
-discoverable via the customer-facing dashboard.
-
-**DNS**: add another `A` record, this time for the admin subdomain, pointing at the same VPS IP —
-same hPanel steps as [step 1](#1-get-access).
+log) — direct-to-Supabase, no self-registration. It's served at `/admin` on the main domain (not
+its own subdomain) via `next.config.js`'s `basePath`, and it's never linked from the
+customer-facing dashboard, so it stays undiscoverable in practice even sharing the domain.
 
 **Configure and build**:
 
@@ -321,7 +318,7 @@ pm2 start ecosystem.config.js
 pm2 save
 ```
 
-Confirm it's up: `curl http://localhost:3200` should redirect toward `/login`.
+Confirm it's up: `curl http://localhost:3200/admin/login` should return the login page.
 
 **Seed the first admin account** — there's no signup UI by design, so create the first row by
 hand. Hash a password using the same `bcryptjs` package the app already depends on:
@@ -337,26 +334,21 @@ insert into admin_users (email, password_hash, full_name)
 values ('you@example.com', '$2a$12$...paste the hash from above...', 'Your Name');
 ```
 
-**nginx + TLS** — a separate server block, same pattern as step 8 but proxying to port 3200 and
-with no path splitting (everything on this subdomain goes to `admin/`):
+**nginx** — one more `location` block inside the existing server block from step 8 (same
+certificate, no new DNS record or certbot run needed since it's the same domain). Add it *before*
+the catch-all `location /` so it takes precedence:
 
 ```nginx
-server {
-    listen 80;
-    server_name admin.cardpingv2.rankkking.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:3200;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+location /admin {
+    proxy_pass http://127.0.0.1:3200;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d admin.cardpingv2.rankkking.com
 ```
 
 **Why the Env Variables and Broadcasts screens work without extra permissions**: `admin/` restarts
@@ -365,6 +357,12 @@ sudo certbot --nginx -d admin.cardpingv2.rankkking.com
 three apps run under the *same* `deploy` user's pm2 daemon (pm2 is per-user, not system-wide), and
 that user already owns every file under `/var/www/cardping`. No `sudo`, no extra ACLs — just don't
 run any of these three apps under a different Linux user later without revisiting this.
+
+This cuts both ways when you're debugging by hand: running `pm2` as `root` over SSH silently
+spins up a *second*, separate root-owned pm2 daemon that knows nothing about the one under
+`deploy` — you'll get two processes fighting over the same ports (`EADDRINUSE`, endless restarts)
+instead of an error telling you a daemon already exists. Always `ssh deploy@your-vps` (or
+`sudo -u deploy pm2 ...` from a root shell) for every pm2 command, never plain `pm2` as root.
 
 ---
 

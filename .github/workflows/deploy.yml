@@ -4,8 +4,9 @@ name: Deploy
 # typecheck/build gate as ci.yml — a red build never reaches the VPS.
 # Three apps live on this VPS: server/ (port 3000, the webhook/OAuth
 # paths on the main domain), dashboard/ (port 3100, everything else on
-# the main domain), and admin/ (port 3200, its own subdomain, never
-# linked from the customer-facing apps) — see docs/HOSTINGER_VPS_SETUP.md
+# the main domain), and admin/ (port 3200, served at the /admin path on
+# the same domain, never linked from the customer-facing apps) — see
+# docs/HOSTINGER_VPS_SETUP.md
 # for the nginx routing and one-time server setup this depends on (the
 # deploy path already git cloned, Node + PM2 installed, the deploy
 # user's public key already in the runner's known VPS).
