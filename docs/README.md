@@ -19,9 +19,14 @@ what you're trying to do:
 | [HOSTINGER_VPS_SETUP.md](./HOSTINGER_VPS_SETUP.md) | One-time setup of a bare Hostinger VPS |
 | [CI_CD.md](./CI_CD.md) | How the GitHub Actions CI/CD pipeline works, and what secrets it needs |
 | [WHATSAPP_TEMPLATES.md](./WHATSAPP_TEMPLATES.md) | Configure the Meta App / WhatsApp Cloud API side |
+| [ADMIN_APP.md](./ADMIN_APP.md) | Understand `admin/`, the staff-only app for managing users, cards, events, bot health, broadcasts, and env vars |
 
 ## The 30-second version
 
+- **Three apps, one repo.** `server/` (the two bots + webhooks), `dashboard/` (the customer-facing
+  Next.js app), and `admin/` (the staff-only Next.js app — see [ADMIN_APP.md](./ADMIN_APP.md)) are
+  independently deployed processes, not a shared monorepo package setup — each has its own
+  `package.json`, builds, and pm2 process.
 - **One codebase, two bots.** `server/src/bots/whatsapp` and `server/src/bots/telegram` are thin,
   channel-specific layers (parsing the inbound payload, sending replies in that channel's
   format). Everything that isn't channel-specific — OCR extraction, coin balance, event

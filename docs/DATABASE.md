@@ -30,6 +30,30 @@ automatically, since there's no shared login; that'd be a natural next feature).
 | `user_state` | Pending-conversation marker — see [ARCHITECTURE.md](./ARCHITECTURE.md#conversation-state) |
 | `write_email` | Set `true` once Gmail follow-up is connected |
 | `full_name` / `email` | Seeded from the channel's profile name on first contact; used as the "from" name in drafted follow-up emails |
+| `blocked_at` *(new)* | Set by `admin/`'s Users page. Non-null blocks card scans on both bots (see `bots/*/handlers/{image,photo}.ts`) — doesn't affect anything else the bot does |
+| `marketing_opt_in` *(new)* | Defaults `false`. The only gate on `admin/`'s Broadcasts audience — see [ADMIN_APP.md](./ADMIN_APP.md) |
+| `plan_id` *(new)* | References `plans.id`. Null = no subscription (trial, if `coin_balance > 0`). Set by `admin/`'s Subscriptions page — no real checkout yet |
+| `plan_expires_at` *(new)* | Paired with `plan_id`. Drives `admin/`'s active/expired status and the auto renewal-reminder notification |
+
+`last_login`, already on `users` (updated on every inbound bot message —
+`db/repositories/users.repo.ts#touchLastLogin`), is exposed through `user_with_event` as of this
+pass too — `admin/`'s Send Message modal uses it to decide whether a WhatsApp message can be free
+text (within 24h) or needs an approved template.
+
+### `plans` *(new)*
+
+A real catalog (`id, name, price_inr, period_days, coins_included, is_active`), seeded with the
+same three tiers `dashboard/lib/mock/billing.ts` mocks (Starter/Professional/Enterprise).
+`description text` and `benefits jsonb` (array of strings) hold whatever eventually renders on the
+dashboard's subscription page. Managed from `admin/`'s Subscriptions → Plans tab (add/edit/
+deactivate — no hard delete, since a user may already reference one).
+
+### `topup_packages` *(new)*
+
+The coin-top-up equivalent of `plans` (`id, coins, price_inr, description, benefits, is_popular,
+is_active`), matching `dashboard/lib/mock/topups.ts`'s `TopUpPackage` shape. Seeded with the same
+four mock tiers. Managed from `admin/`'s Subscriptions → Top-ups tab, same add/edit/deactivate
+pattern as `plans`.
 
 ### `events`
 
@@ -42,7 +66,9 @@ One row per scanned card. `uploaded_by` is `"whatsapp"` or `"telegram"`. `messag
 inbound message id of the *photo* — used to match a later voice-note reply back to this card
 (see `services/voiceNoteService.ts`). `storage_path` / `image_public_url` point at the photo in
 Supabase Storage; `voice_note_path` / `voice_note_public_url` at the transcribed voice note, if
-any.
+any. `extraction_confidence` *(new)* is GPT-4o's own `0.5`–`1.0` confidence score for the scan
+(`ExtractedCard.confidence`), persisted since `admin/`'s Cards page uses it to surface
+low-confidence scans worth a manual look.
 
 ### `gmail_tokens`
 
@@ -59,7 +85,37 @@ card it's about.
 ### `transactions`
 
 An audit log of coin movements. `type` is one of `card_scan` (−1, recorded automatically on every
-scan), `coin_purchase` (+N, from a Cashfree top-up), `coin_bonus`, `refund`.
+scan), `coin_purchase` (+N, from a Cashfree top-up), `coin_bonus`, `refund`, `admin_adjustment`
+*(new)* — a manual balance change made from `admin/`'s Users page — or `subscription_payment`
+*(new)* — a plan assigned from `admin/`'s Subscriptions page. `amount_inr` *(new)* and `plan_id`
+*(new, references `plans.id`)* are only set on `subscription_payment` rows — `coins` alone can't
+represent a currency amount, and "total earning" on the Subscriptions summary is
+`sum(amount_inr) where type='subscription_payment' and status='completed'`.
+
+### `admin_users`, `admin_sessions`, `admin_audit_log` *(new)*
+
+Staff accounts for `admin/` — separate from the customer `users` table, provisioned by hand (one
+`INSERT` per person, see [HOSTINGER_VPS_SETUP.md §11](./HOSTINGER_VPS_SETUP.md#11-deploy-the-admin-app)),
+not self-service. `admin_sessions` is the same opaque-cookie session pattern as the customer
+dashboard's planned auth (bcrypt password hash, revocation is just a row delete — no JWT).
+`admin_audit_log` gets one row per consequential action (block/unblock, coin adjustment, card
+re-run, env var edit, broadcast send) — see [ADMIN_APP.md](./ADMIN_APP.md).
+
+### `broadcast_campaigns`, `broadcast_recipients` *(new)*
+
+One campaign row per broadcast sent from `admin/`'s Broadcasts page, one recipient row per user it
+was sent to (`status`: `pending` → `sent`/`failed`, plus `error` on failure). `audience_filter text`
+*(new)* records which narrowing filter (all/subscribed/low_balance/trial — `lib/audienceFilter.ts`)
+the campaign used, so **Resend** can re-resolve the same audience fresh rather than reusing a
+possibly-stale recipient list. See [ADMIN_APP.md](./ADMIN_APP.md) for the send flow and the
+WhatsApp Marketing Template requirement.
+
+### `notification_log` *(new)*
+
+One row per renewal-reminder / low-balance-alert WhatsApp send attempt, auto or manual
+(`type`, `triggered_by`, reuses `broadcast_channel`/`broadcast_recipient_status` rather than adding
+near-duplicate enums; `admin_user_id` set only for manual sends). See
+[ADMIN_APP.md](./ADMIN_APP.md#proactive-whatsapp-notifications).
 
 ## Views
 
@@ -68,6 +124,14 @@ scan), `coin_purchase` (+N, from a Cashfree top-up), `coin_bonus`, `refund`.
 The one view both bots actually query day-to-day — a `users` row joined with its active event's
 name and active card's name/company, so a single `SELECT` gets everything a message handler
 needs. `db/repositories/users.repo.ts` is built entirely around this view.
+
+**This must stay the only `create or replace view public.user_with_event` statement in
+`schema.sql`, positioned after every `ALTER TABLE ... ADD COLUMN` it references.** `CREATE OR
+REPLACE VIEW` can append trailing columns but can't reorder or drop existing ones — a second,
+narrower definition earlier in file-execution order will fail the moment the view already has more
+columns than that statement lists (this happened once, while adding the columns above — see the
+comment directly above the view definition in `schema.sql`). Extend the one definition at the
+bottom of the file instead of adding another.
 
 ### `cards_export_view`
 
@@ -85,6 +149,16 @@ the original n8n export but not defined in it — recreated here from its usage.
 
 The top-up counterpart, used by the Cashfree payment webhook to credit coins once a payment link
 is paid.
+
+### `admin_adjust_coin_balance(user_uuid, delta, reason)` *(new)*
+
+Same floor-at-zero behavior, but `delta` can be negative (deduct) or positive (add), and it also
+inserts the corresponding `admin_adjustment` transaction row. Used only by `admin/`'s Users page.
+
+Assigning a plan (`admin/`'s Subscriptions → "Change plan") doesn't get its own RPC — it's three
+plain statements in `adminSubscriptionsRepo.setUserPlan`: update `users.plan_id`/`plan_expires_at`,
+call the existing `increment_coin_balance` RPC for the plan's `coins_included`, and insert the
+`subscription_payment` transaction row.
 
 ## Storage buckets
 
@@ -105,3 +179,6 @@ Everything below is additive — nothing from `old-project/schema.md` was remove
 | `increment_coin_balance` RPC | Didn't exist before; needed for the same reason |
 | `visiting_cards` `updated_at` trigger | The original schema only wired this trigger on `users`; added it here for `visiting_cards` too since the app updates it (adding a voice note transcript) |
 | `idx_cards_message_id` index | The voice-note-matching lookup (`WHERE message_id = ...`) runs on every voice note received |
+| `users.blocked_at`, `users.marketing_opt_in`, `visiting_cards.extraction_confidence`, `transaction_type` gains `admin_adjustment`, `admin_users`/`admin_sessions`/`admin_audit_log`, `broadcast_campaigns`/`broadcast_recipients`, `admin_adjust_coin_balance` RPC | The `admin/` super-admin app — see [ADMIN_APP.md](./ADMIN_APP.md) |
+| `plans`, `users.plan_id`/`plan_expires_at`, `transaction_type` gains `subscription_payment`, `transactions.amount_inr`/`plan_id`, `notification_log` | `admin/` subscriptions bookkeeping + proactive WhatsApp notifications — see [ADMIN_APP.md](./ADMIN_APP.md#subscriptions--admin-bookkeeping-not-real-checkout) |
+| `plans.description`/`benefits`, `topup_packages`, `broadcast_campaigns.audience_filter`, `user_with_event` exposes `last_login` | `admin/` catalog management, broadcast audience filters + resend, 1:1 messaging's 24h-window check — see [ADMIN_APP.md](./ADMIN_APP.md) |

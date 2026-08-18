@@ -25,6 +25,8 @@ export function formatCardSummary(card: ExtractedCard): string {
 }
 
 export const Copy = {
+  accountBlocked:
+    "🚫 Your account is currently unable to scan cards. If you think this is a mistake, please contact support.",
   insufficientCoins: (balance: number) =>
     `❌ Insufficient coins!\n\n🪙 Current balance: ${balance}\n💳 You need at least 1 coin to process a visiting card.\n\nTap Buy Credits in the menu to top up.`,
   needEventFirst:

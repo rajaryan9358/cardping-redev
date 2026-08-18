@@ -36,6 +36,8 @@ export interface User {
   write_email: boolean;
   user_state: UserState | null;
   export_sheet_id: string | null;
+  blocked_at: string | null;
+  marketing_opt_in: boolean;
 }
 
 export interface UserWithEvent {
@@ -56,6 +58,8 @@ export interface UserWithEvent {
   subscription_tier: string | null;
   metadata: Record<string, unknown>;
   user_state: UserState | null;
+  blocked_at: string | null;
+  marketing_opt_in: boolean;
   created_at: string;
   updated_at: string;
   export_sheet_id: string | null;
@@ -96,9 +100,15 @@ export interface VisitingCard {
   storage_path: string | null;
   image_public_url: string | null;
   voice_note_public_url: string | null;
+  extraction_confidence: number | null;
 }
 
-export type TransactionType = "card_scan" | "coin_purchase" | "coin_bonus" | "refund";
+export type TransactionType =
+  | "card_scan"
+  | "coin_purchase"
+  | "coin_bonus"
+  | "refund"
+  | "admin_adjustment";
 
 export interface Transaction {
   id: string;

@@ -34,6 +34,7 @@ async function create(input: CreateVisitingCardInput): Promise<VisitingCard> {
       twitter: extracted.social_media.twitter || null,
       facebook: extracted.social_media.facebook || null,
       uploaded_by: input.uploadedBy,
+      extraction_confidence: extracted.confidence,
     })
     .select("*")
     .single();

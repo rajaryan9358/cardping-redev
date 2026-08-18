@@ -2,12 +2,13 @@ name: Deploy
 
 # Deploys to the Hostinger VPS on every push to main, after the exact same
 # typecheck/build gate as ci.yml — a red build never reaches the VPS.
-# Both apps live behind the same nginx host (cardpingv2.rankkking.com):
-# server/ answers the webhook/OAuth paths, dashboard/ answers everything
-# else — see docs/HOSTINGER_VPS_SETUP.md for the nginx routing and
-# one-time server setup this depends on (the deploy path already git
-# cloned, Node + PM2 installed, the deploy user's public key already in
-# the runner's known VPS).
+# Three apps live on this VPS: server/ (port 3000, the webhook/OAuth
+# paths on the main domain), dashboard/ (port 3100, everything else on
+# the main domain), and admin/ (port 3200, its own subdomain, never
+# linked from the customer-facing apps) — see docs/HOSTINGER_VPS_SETUP.md
+# for the nginx routing and one-time server setup this depends on (the
+# deploy path already git cloned, Node + PM2 installed, the deploy
+# user's public key already in the runner's known VPS).
 on:
   push:
     branches: [main]
@@ -18,10 +19,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [server, dashboard]
+        app: [server, dashboard, admin]
     defaults:
       run:
         working-directory: ${{ matrix.app }}
+    # See ci.yml for why admin/'s build needs these — placeholder values
+    # only, just enough to satisfy lib/env.ts's schema during `next build`.
+    env:
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+      SERVER_ENV_PATH: ../server/.env
+      DASHBOARD_ENV_PATH: ../dashboard/.env
+      SERVER_HEALTH_URL: http://127.0.0.1:3000/health
+      SESSION_COOKIE_NAME: cardping_admin_session
+      SESSION_TTL_HOURS: "168"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,6 +68,12 @@ jobs:
             pm2 startOrReload ecosystem.config.js --update-env
 
             cd ../dashboard
+            npm ci
+            npm run build
+            npm prune --omit=dev
+            pm2 startOrReload ecosystem.config.js --update-env
+
+            cd ../admin
             npm ci
             npm run build
             npm prune --omit=dev

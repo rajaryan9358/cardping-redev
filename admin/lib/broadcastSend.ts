@@ -1,0 +1,88 @@
+import "server-only";
+import { appEnvFiles } from "./appEnvFiles";
+
+// Same duplication rationale as lib/vision.ts: a thin send client, kept in
+// admin/ only, reading the actual WhatsApp/Telegram tokens out of
+// server/.env at send time rather than copying them into admin/.env.
+export async function sendWhatsAppTemplate(
+  to: string,
+  templateName: string,
+  languageCode: string,
+  variables: string[],
+): Promise<void> {
+  const [token, phoneNumberId, apiVersion] = await Promise.all([
+    appEnvFiles.readEnvValue("server", "WHATSAPP_ACCESS_TOKEN"),
+    appEnvFiles.readEnvValue("server", "WHATSAPP_PHONE_NUMBER_ID"),
+    appEnvFiles.readEnvValue("server", "WHATSAPP_GRAPH_API_VERSION"),
+  ]);
+  if (!token || !phoneNumberId) throw new Error("WhatsApp credentials not found in server/.env");
+
+  const components =
+    variables.length > 0
+      ? [{ type: "body", parameters: variables.map((text) => ({ type: "text", text })) }]
+      : undefined;
+
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion || "v23.0"}/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: { name: templateName, language: { code: languageCode }, ...(components ? { components } : {}) },
+      }),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`WhatsApp send failed (${response.status}): ${detail}`);
+  }
+}
+
+/** Free-form WhatsApp text — only valid within Meta's 24h customer-service
+ * window (see docs/WHATSAPP_TEMPLATES.md). Callers (the Send Message
+ * modal) are responsible for checking users.last_login before using this
+ * instead of sendWhatsAppTemplate. */
+export async function sendWhatsAppText(to: string, body: string): Promise<void> {
+  const [token, phoneNumberId, apiVersion] = await Promise.all([
+    appEnvFiles.readEnvValue("server", "WHATSAPP_ACCESS_TOKEN"),
+    appEnvFiles.readEnvValue("server", "WHATSAPP_PHONE_NUMBER_ID"),
+    appEnvFiles.readEnvValue("server", "WHATSAPP_GRAPH_API_VERSION"),
+  ]);
+  if (!token || !phoneNumberId) throw new Error("WhatsApp credentials not found in server/.env");
+
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion || "v23.0"}/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { preview_url: false, body },
+      }),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`WhatsApp send failed (${response.status}): ${detail}`);
+  }
+}
+
+export async function sendTelegramBroadcastMessage(chatId: string, text: string): Promise<void> {
+  const token = await appEnvFiles.readEnvValue("server", "TELEGRAM_BOT_TOKEN");
+  if (!token) throw new Error("TELEGRAM_BOT_TOKEN not found in server/.env");
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Telegram send failed (${response.status}): ${detail}`);
+  }
+}

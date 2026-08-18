@@ -12,6 +12,11 @@ import { Ids } from "../ids";
 export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
   const { chatId } = msg;
 
+  if (user.blocked_at) {
+    await telegramClient.sendMessage(chatId, Copy.accountBlocked);
+    return;
+  }
+
   if (!hasEnoughCoinsForScan(user.coin_balance)) {
     await telegramClient.sendMessage(chatId, Copy.insufficientCoins(user.coin_balance));
     return;

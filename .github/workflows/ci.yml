@@ -1,7 +1,7 @@
 name: CI
 
 # Validates every push and pull request: install, typecheck, build — for
-# both apps in this repo. This is the gate deploy.yml's `build` jobs also
+# every app in this repo. This is the gate deploy.yml's `build` jobs also
 # run before ever touching the VPS — see that workflow for the actual
 # deploy step.
 on:
@@ -14,10 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [server, dashboard]
+        app: [server, dashboard, admin]
     defaults:
       run:
         working-directory: ${{ matrix.app }}
+    # admin/'s `next build` executes its Server Component modules to
+    # collect page data (unlike server/'s `tsc`-only build), which runs
+    # lib/env.ts's validation at build time — these placeholder values
+    # only need to satisfy that schema, never anything real. server/ and
+    # dashboard/ ignore variables they don't read.
+    env:
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+      SERVER_ENV_PATH: ../server/.env
+      DASHBOARD_ENV_PATH: ../dashboard/.env
+      SERVER_HEALTH_URL: http://127.0.0.1:3000/health
+      SESSION_COOKIE_NAME: cardping_admin_session
+      SESSION_TTL_HOURS: "168"
     steps:
       - uses: actions/checkout@v4
 

@@ -99,12 +99,12 @@ Confirm it's up: `curl http://localhost:3000/health` should return `{"ok":true,.
 
 ## 8. nginx reverse proxy + TLS
 
-Both apps in this repo share one domain and one nginx host: `server/` (Express, port 3000)
-answers the webhook/OAuth paths that are registered with WhatsApp/Telegram/Google/Cashfree, and
-`dashboard/` (Next.js, port 3100) answers everything else. Route by exact path, not by prefix —
-the five backend paths below are the *complete* list (grep `server/src/routes/*.ts` for
-`router.(get|post)` if that ever changes), so anything not matching one of them falls through to
-the dashboard.
+`server/` (Express, port 3000) and `dashboard/` (Next.js, port 3100) share one domain and one
+nginx host. `admin/` (Next.js, port 3200) is deliberately on its own subdomain instead — see
+[step 11](#11-deploy-the-admin-app) — so it's never linked from or discoverable via the
+customer-facing apps. On the shared domain, route by exact path, not by prefix — the five backend
+paths below are the *complete* list (grep `server/src/routes/*.ts` for `router.(get|post)` if that
+ever changes), so anything not matching one of them falls through to the dashboard.
 
 ```bash
 sudo apt install -y nginx certbot python3-certbot-nginx
@@ -288,6 +288,83 @@ Do that any time you suspect the key leaked, or just periodically as good hygien
 fresh key instead of only revoking, repeat Steps 1–4 with a new filename and update the
 `VPS_SSH_KEY` secret to the new private key before removing the old public key from
 `authorized_keys` — that ordering avoids a window where neither key works.
+
+## 11. Deploy the admin app
+
+`admin/` is staff-only tooling (users, cards, events, bot health, broadcasts, env variables, audit
+log) — direct-to-Supabase, no self-registration. It's deliberately on its **own subdomain** (e.g.
+`admin.cardpingv2.rankkking.com`), not a path on the main domain, so it's never linked from or
+discoverable via the customer-facing dashboard.
+
+**DNS**: add another `A` record, this time for the admin subdomain, pointing at the same VPS IP —
+same hPanel steps as [step 1](#1-get-access).
+
+**Configure and build**:
+
+```bash
+cd /var/www/cardping/admin
+cp .env.example .env
+nano .env
+```
+
+Fill in `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` with the **same** values as `server/.env` — it's
+the same Supabase project. `SERVER_ENV_PATH`/`DASHBOARD_ENV_PATH` can stay at their defaults
+(`../server/.env`, `../dashboard/.env`) since all three apps are siblings under
+`/var/www/cardping`. The `admin_*`/`broadcast_*` tables and the `blocked_at`/`extraction_confidence`
+columns this app needs are part of the same `server/db/schema.sql` you already applied in
+[step 6](#6-configure-and-apply-the-database-schema) — nothing extra to run there.
+
+```bash
+npm ci
+npm run build
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+Confirm it's up: `curl http://localhost:3200` should redirect toward `/login`.
+
+**Seed the first admin account** — there's no signup UI by design, so create the first row by
+hand. Hash a password using the same `bcryptjs` package the app already depends on:
+
+```bash
+node -e "console.log(require('bcryptjs').hashSync(process.argv[1], 12))" -- 'your-password-here'
+```
+
+Then, in the Supabase SQL Editor (see [DATABASE.md](./DATABASE.md)):
+
+```sql
+insert into admin_users (email, password_hash, full_name)
+values ('you@example.com', '$2a$12$...paste the hash from above...', 'Your Name');
+```
+
+**nginx + TLS** — a separate server block, same pattern as step 8 but proxying to port 3200 and
+with no path splitting (everything on this subdomain goes to `admin/`):
+
+```nginx
+server {
+    listen 80;
+    server_name admin.cardpingv2.rankkking.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3200;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d admin.cardpingv2.rankkking.com
+```
+
+**Why the Env Variables and Broadcasts screens work without extra permissions**: `admin/` restarts
+`server/`'s and `dashboard/'s pm2 processes (`pm2 restart cardping-server`, after editing their
+`.env` files) and reads secrets out of `server/.env` at send time — this only works because all
+three apps run under the *same* `deploy` user's pm2 daemon (pm2 is per-user, not system-wide), and
+that user already owns every file under `/var/www/cardping`. No `sudo`, no extra ACLs — just don't
+run any of these three apps under a different Linux user later without revisiting this.
 
 ---
 

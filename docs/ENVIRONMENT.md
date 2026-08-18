@@ -31,6 +31,7 @@ later, mid-request).
 | `WHATSAPP_PHONE_NUMBER_ID` | Yes | Default phone number id to send from for server-initiated sends (e.g. the Cashfree payment-confirmation message). Normal replies use the `phone_number_id` from the inbound webhook automatically, so this matters less than it sounds |
 | `WHATSAPP_APP_SECRET` | Recommended | Meta App secret, used to verify the `X-Hub-Signature-256` header on every inbound webhook. If unset, signature verification is skipped (logged as a warning) — fine for local dev, not for production |
 | `WHATSAPP_GRAPH_API_VERSION` | No (default `v23.0`) | Graph API version segment used in every URL |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Optional | The WABA ID (Meta Business Manager → WhatsApp Manager → API Setup) — **distinct from `WHATSAPP_PHONE_NUMBER_ID`**. `server/` itself never reads this; it's read out of this file by `admin/` (via `appEnvFiles`, same mechanism as every other cross-app secret read) to populate the template dropdown on the Broadcasts and Send Message screens. Until it's set, those screens fall back to manual template-name entry — nothing breaks, it's just not autocompleted |
 
 See [WHATSAPP_TEMPLATES.md](./WHATSAPP_TEMPLATES.md) for the Meta App Dashboard setup this
 depends on.

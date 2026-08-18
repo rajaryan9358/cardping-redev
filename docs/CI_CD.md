@@ -5,9 +5,12 @@ Two GitHub Actions workflows, both in [`.github/workflows/`](../.github/workflow
 ## `ci.yml`
 
 Runs on every push (any branch) and every pull request: `npm ci`, `npm run typecheck`,
-`npm run build`, inside `server/`. No secrets needed, no deploy — this is purely "does it still
-compile," and is a good candidate to mark as a **required status check** on `main` in the GitHub
-repo's branch protection settings once you have one, so a broken build can't be merged.
+`npm run build`, for each of `server/`, `dashboard/`, and `admin/` (a build matrix — three parallel
+jobs, one per app). No real secrets needed, no deploy — `admin/`'s job gets a handful of
+placeholder env values (see the `env:` block in the workflow file) just to satisfy its build-time
+schema validation, never anything that touches a real Supabase project. This is purely "does it
+still compile," and is a good candidate to mark as a **required status check** on `main` in the
+GitHub repo's branch protection settings once you have one, so a broken build can't be merged.
 
 ## `deploy.yml`
 
@@ -17,26 +20,28 @@ Runs on every push to `main` (or manually, via the "Run workflow" button — it 
 1. **`build` job** — the identical typecheck/build gate as `ci.yml`. If this fails, the `deploy`
    job (which `needs: build`) never runs — a red build never reaches the VPS.
 2. **`deploy` job** — SSHes into the VPS ([`appleboy/ssh-action`](https://github.com/appleboy/ssh-action))
-   and runs:
+   and, for each of `server/`, `dashboard/`, `admin/` in turn, runs:
    ```bash
    cd $VPS_DEPLOY_PATH
    git fetch origin main
    git reset --hard origin/main
-   cd server
+   cd server        # then dashboard, then admin
    npm ci
    npm run build
    npm prune --omit=dev
    pm2 startOrReload ecosystem.config.js --update-env
    pm2 save
    ```
-   `npm ci` installs everything, including `typescript` — `tsc` needs to be present to run `npm run
-   build` at all. `npm prune --omit=dev` then strips `devDependencies` back out once the compiled
-   `dist/` exists, so the `node_modules` PM2 actually runs against stays lean. (An earlier version
-   of this script ran `npm ci --omit=dev` up front, which skipped `typescript` entirely and made
-   every deploy fail at the build step with `tsc: not found`.)
+   `npm ci` installs everything, including `typescript`/`next` — the build tooling needs to be
+   present to run `npm run build` at all. `npm prune --omit=dev` then strips `devDependencies`
+   back out once the build output exists, so the `node_modules` PM2 actually runs against stays
+   lean. (An earlier version of this script ran `npm ci --omit=dev` up front, which skipped
+   `typescript` entirely and made every deploy fail at the build step with `tsc: not found`.)
 
    `pm2 startOrReload` starts the app if it isn't running yet, or reloads it in place if it is —
-   the same command works for the very first deploy and every one after.
+   the same command works for the very first deploy and every one after. `admin/`'s real `.env`
+   (unlike CI's placeholders) lives only on the VPS, same as `server/.env` — see
+   [HOSTINGER_VPS_SETUP.md §11](./HOSTINGER_VPS_SETUP.md#11-deploy-the-admin-app).
 
 ## Required GitHub secrets
 
