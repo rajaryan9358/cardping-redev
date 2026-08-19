@@ -4,14 +4,24 @@ import { useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { TextField } from "../../../components/ui/TextField";
-import { AdminUserRow } from "../../../lib/repositories/adminUsers.repo";
 import { adjustUserCoinsAction } from "./actions";
 
+export interface AdjustCoinsTarget {
+  id: string;
+  full_name: string | null;
+  effective_coin_balance: number;
+}
+
 export function AdjustCoinsModal({
-  user,
+  target,
+  onConfirm = adjustUserCoinsAction,
   onClose,
 }: {
-  user: AdminUserRow | null;
+  target: AdjustCoinsTarget | null;
+  /** Defaults to the channel-identity action (adjustUserCoinsAction) —
+   * pass this to target an account directly instead (see UsersTable's
+   * "account" kind rows). */
+  onConfirm?: (id: string, delta: number, reason: string) => Promise<void>;
   onClose: () => void;
 }) {
   const [amount, setAmount] = useState("");
@@ -19,7 +29,7 @@ export function AdjustCoinsModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  if (!user) return null;
+  if (!target) return null;
 
   async function handleSave() {
     const delta = Number(amount);
@@ -30,7 +40,7 @@ export function AdjustCoinsModal({
     setSaving(true);
     setError(null);
     try {
-      await adjustUserCoinsAction(user!.user_id, delta, reason);
+      await onConfirm(target!.id, delta, reason);
       setAmount("");
       setReason("");
       onClose();
@@ -43,9 +53,9 @@ export function AdjustCoinsModal({
 
   return (
     <Modal
-      open={user !== null}
+      open={target !== null}
       onClose={onClose}
-      title={`Adjust coins — ${user.full_name || "Unnamed user"}`}
+      title={`Adjust coins — ${target.full_name || "Unnamed user"}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -59,7 +69,7 @@ export function AdjustCoinsModal({
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">
-          Current balance: <span className="font-medium text-ink">{user.effective_coin_balance}</span> coins
+          Current balance: <span className="font-medium text-ink">{target.effective_coin_balance}</span> coins
         </p>
         <TextField
           label="Amount"

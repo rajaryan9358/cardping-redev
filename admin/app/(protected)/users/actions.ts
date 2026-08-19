@@ -61,6 +61,22 @@ export async function setUserBlockedAction(userId: string, blocked: boolean): Pr
   revalidatePath(`/users/${userId}`);
 }
 
+/** Same as setUserBlockedAction, targeting an account directly — for the
+ * Users directory's "account" rows, which always know their accountId
+ * already (see adminUsersRepo.listUsers) and may have zero linked
+ * channels for setUserBlockedAction's userId-based resolution to work with. */
+export async function setAccountBlockedAction(accountId: string, blocked: boolean): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.setAccountBlocked(accountId, blocked);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: blocked ? "user.block" : "user.unblock",
+    targetTable: "accounts",
+    targetId: accountId,
+  });
+  revalidatePath("/users");
+}
+
 export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
@@ -116,4 +132,20 @@ export async function adjustUserCoinsAction(
   });
   revalidatePath("/users");
   revalidatePath(`/users/${userId}`);
+}
+
+/** Same as adjustUserCoinsAction, targeting an account directly — see
+ * setAccountBlockedAction's comment. */
+export async function adjustAccountCoinsAction(accountId: string, delta: number, reason: string): Promise<void> {
+  const admin = await requireAdmin();
+  if (!Number.isFinite(delta) || delta === 0) throw new Error("Enter a non-zero amount.");
+  await adminUsersRepo.adjustAccountCoins(accountId, delta, reason);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: "user.adjust_coins",
+    targetTable: "accounts",
+    targetId: accountId,
+    detail: { delta, reason },
+  });
+  revalidatePath("/users");
 }

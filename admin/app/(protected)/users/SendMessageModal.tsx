@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
-import { AdminUserRow } from "../../../lib/repositories/adminUsers.repo";
 import { WhatsAppTemplate } from "../../../lib/whatsappTemplates";
 import { formatDate } from "../../../lib/format";
 import { listWhatsAppTemplatesAction } from "../actions";
@@ -11,13 +10,22 @@ import { sendMessageAction } from "./actions";
 
 const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
 
-function defaultMessageFor(user: AdminUserRow): string {
+export interface SendMessageTarget {
+  user_id: string;
+  full_name: string | null;
+  wa_id: string | null;
+  telegram_chat_id: string | null;
+  last_login: string | null;
+  effective_plan_expires_at: string | null;
+}
+
+function defaultMessageFor(user: SendMessageTarget): string {
   if (!user.effective_plan_expires_at) return "";
   const name = user.full_name || "there";
   return `Hi ${name}, your plan expires on ${formatDate(user.effective_plan_expires_at)}. Renew soon to keep your benefits.`;
 }
 
-export function SendMessageModal({ user, onClose }: { user: AdminUserRow | null; onClose: () => void }) {
+export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | null; onClose: () => void }) {
   const availableChannels = user
     ? ([user.wa_id ? "whatsapp" : null, user.telegram_chat_id ? "telegram" : null].filter(Boolean) as (
         | "whatsapp"

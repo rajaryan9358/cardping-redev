@@ -49,7 +49,10 @@ export function UserDetailActions({ user }: { user: AdminUserRow }) {
         }}
       />
 
-      <AdjustCoinsModal user={coinsOpen ? user : null} onClose={() => setCoinsOpen(false)} />
+      <AdjustCoinsModal
+        target={coinsOpen ? { id: user.user_id, full_name: user.full_name, effective_coin_balance: user.effective_coin_balance } : null}
+        onClose={() => setCoinsOpen(false)}
+      />
     </div>
   );
 }

@@ -12,14 +12,21 @@ import { TextField } from "../../../components/ui/TextField";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
 import { cn } from "@/lib/cn";
-import { AdminUserRow } from "../../../lib/repositories/adminUsers.repo";
+import { AdminUserListRow } from "../../../lib/repositories/adminUsers.repo";
 import { Plan } from "../../../lib/repositories/adminSubscriptions.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
-import { setUserBlockedAction, sendLowBalanceAlertAction } from "./actions";
+import {
+  setUserBlockedAction,
+  setAccountBlockedAction,
+  sendLowBalanceAlertAction,
+  adjustUserCoinsAction,
+  adjustAccountCoinsAction,
+} from "./actions";
+import { setUserPlanAction, setAccountPlanAction } from "../subscriptions/actions";
 import { AdjustCoinsModal } from "./AdjustCoinsModal";
 import { ChangePlanModal } from "../../../components/subscriptions/ChangePlanModal";
-import { SendMessageModal } from "./SendMessageModal";
+import { SendMessageModal, SendMessageTarget } from "./SendMessageModal";
 
 const STATUS_TABS = [
   { value: "", label: "All" },
@@ -54,7 +61,7 @@ export function UsersTable({
   plans,
   lowBalanceThreshold,
 }: {
-  rows: AdminUserRow[];
+  rows: AdminUserListRow[];
   total: number;
   page: number;
   pageSize: number;
@@ -69,10 +76,10 @@ export function UsersTable({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [blockTarget, setBlockTarget] = useState<AdminUserRow | null>(null);
-  const [coinsTarget, setCoinsTarget] = useState<AdminUserRow | null>(null);
-  const [planTarget, setPlanTarget] = useState<AdminUserRow | null>(null);
-  const [messageTarget, setMessageTarget] = useState<AdminUserRow | null>(null);
+  const [blockTarget, setBlockTarget] = useState<AdminUserListRow | null>(null);
+  const [coinsTarget, setCoinsTarget] = useState<AdminUserListRow | null>(null);
+  const [planTarget, setPlanTarget] = useState<AdminUserListRow | null>(null);
+  const [messageTarget, setMessageTarget] = useState<AdminUserListRow | null>(null);
   const [alertingFor, setAlertingFor] = useState<string | null>(null);
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
 
@@ -224,11 +231,15 @@ export function UsersTable({
         </TableHeaderRow>
         {rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No users found.</p>}
         {rows.map((user) => (
-          <Tr key={user.user_id}>
+          <Tr key={user.id}>
             <Td>
-              <Link href={`/users/${user.user_id}`} className="font-medium text-ink hover:underline">
-                {user.full_name || "Unnamed user"}
-              </Link>
+              {user.detail_user_id ? (
+                <Link href={`/users/${user.detail_user_id}`} className="font-medium text-ink hover:underline">
+                  {user.full_name || "Unnamed"}
+                </Link>
+              ) : (
+                <span className="font-medium text-ink">{user.full_name || "Unnamed"}</span>
+              )}
               <div className="text-xs text-muted">{user.email || "No email on file"}</div>
             </Td>
             <Td>
@@ -263,13 +274,13 @@ export function UsersTable({
                       label: "Send message",
                       icon: <MessageSquare className="size-3.5" strokeWidth={2} />,
                       onClick: () => setMessageTarget(user),
-                      disabled: !user.wa_id && !user.telegram_chat_id,
+                      disabled: !user.detail_user_id || (!user.wa_id && !user.telegram_chat_id),
                     },
                     {
                       label: "Low-balance alert",
                       icon: <Bell className="size-3.5" strokeWidth={2} />,
-                      onClick: () => handleSendLowBalanceAlert(user.user_id),
-                      disabled: !user.wa_id || alertingFor === user.user_id,
+                      onClick: () => handleSendLowBalanceAlert(user.detail_user_id!),
+                      disabled: !user.detail_user_id || !user.wa_id || alertingFor === user.detail_user_id,
                     },
                     {
                       label: user.effective_blocked_at ? "Unblock" : "Block",
@@ -309,24 +320,44 @@ export function UsersTable({
         onCancel={() => setBlockTarget(null)}
         onConfirm={async () => {
           if (!blockTarget) return;
-          await setUserBlockedAction(blockTarget.user_id, !blockTarget.effective_blocked_at);
+          const setBlocked = blockTarget.kind === "account" ? setAccountBlockedAction : setUserBlockedAction;
+          await setBlocked(blockTarget.id, !blockTarget.effective_blocked_at);
           setBlockTarget(null);
         }}
       />
 
-      <AdjustCoinsModal user={coinsTarget} onClose={() => setCoinsTarget(null)} />
+      <AdjustCoinsModal
+        target={coinsTarget}
+        onConfirm={coinsTarget?.kind === "account" ? adjustAccountCoinsAction : adjustUserCoinsAction}
+        onClose={() => setCoinsTarget(null)}
+      />
 
       <ChangePlanModal
-        userId={planTarget?.user_id ?? null}
+        userId={planTarget?.id ?? null}
         userName={planTarget?.full_name || "this user"}
         plans={plans}
+        onConfirm={planTarget?.kind === "account" ? setAccountPlanAction : setUserPlanAction}
         onClose={() => {
           setPlanTarget(null);
           router.refresh();
         }}
       />
 
-      <SendMessageModal user={messageTarget} onClose={() => setMessageTarget(null)} />
+      <SendMessageModal
+        user={
+          messageTarget?.detail_user_id
+            ? ({
+                user_id: messageTarget.detail_user_id,
+                full_name: messageTarget.full_name,
+                wa_id: messageTarget.wa_id,
+                telegram_chat_id: messageTarget.telegram_chat_id,
+                last_login: messageTarget.last_login,
+                effective_plan_expires_at: messageTarget.effective_plan_expires_at,
+              } satisfies SendMessageTarget)
+            : null
+        }
+        onClose={() => setMessageTarget(null)}
+      />
     </div>
   );
 }

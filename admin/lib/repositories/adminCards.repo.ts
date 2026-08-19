@@ -37,14 +37,25 @@ async function listLowConfidenceCards({
   const orderField = parsedSort && SORTABLE_FIELDS.has(parsedSort.field) ? parsedSort.field : "created_at";
   const orderAscending = parsedSort && SORTABLE_FIELDS.has(parsedSort.field) ? parsedSort.ascending : false;
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("visiting_cards")
     .select(
       "id, user_id, event_id, full_name, company_name, uploaded_by, extraction_confidence, storage_path, image_public_url, created_at, user:users!visiting_cards_user_id_fkey(full_name, email)",
       { count: "exact" },
-    )
-    .not("extraction_confidence", "is", null)
-    .lte("extraction_confidence", maxConfidence)
+    );
+
+  // "All" (maxConfidence >= 1, the top segmented-control option) means
+  // literally all cards, including ones scanned before extraction_confidence
+  // existed (added 5 days after the bot went live, no backfill) — those
+  // rows are NULL and would otherwise be silently excluded by the not-null
+  // filter regardless of threshold. Every narrower percentage option keeps
+  // excluding unscored cards, since "≤70% confidence" can't sensibly
+  // include "confidence unknown".
+  if (maxConfidence < 1) {
+    query = query.not("extraction_confidence", "is", null).lte("extraction_confidence", maxConfidence);
+  }
+
+  const { data, error, count } = await query
     .order(orderField, { ascending: orderAscending })
     .range(from, from + pageSize - 1);
 
