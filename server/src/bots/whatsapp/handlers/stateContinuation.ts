@@ -32,7 +32,7 @@ export async function tryContinuePendingState(
     case "awaiting_account_settings_choice": {
       if (msg.buttonId === Ids.accountCheckCredit) {
         await usersRepo.setState(user.user_id, "idle");
-        await whatsappClient.sendText(phoneNumberId, from, Copy.coinBalance(user.coin_balance));
+        await whatsappClient.sendText(phoneNumberId, from, Copy.coinBalance(user.effective_coin_balance));
         return true;
       }
       if (msg.buttonId === Ids.accountConnectGmail) {

@@ -7,17 +7,71 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
+import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
+import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 
 type LoginMode = "password" | "otp";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_credentials: "Incorrect email or password.",
+  account_blocked: "This account has been blocked. Contact support for help.",
+  whatsapp_otp_not_configured: "Mobile OTP sign-in isn't set up yet — use email and password.",
+};
+
+function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? "Something went wrong. Please try again.";
+}
+
+interface LoginAccount {
+  onboarded_at: string | null;
+}
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<LoginMode>(searchParams.get("mode") === "otp" ? "otp" : "password");
   const router = useRouter();
+  const authConfig = useAuthConfig();
 
-  function handleSendCode(e: React.FormEvent) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
-    router.push("/otp?context=login");
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await clientFetch("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      const { account } = await parseJsonOrThrow<{ account: LoginAccount }>(res);
+      router.push(account.onboarded_at ? "/home" : "/onboarding");
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSendCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await clientFetch("/api/auth/otp/request", {
+        method: "POST",
+        body: JSON.stringify({ mobile }),
+      });
+      await parseJsonOrThrow(res);
+      router.push(`/otp?context=login&mobile=${encodeURIComponent(mobile)}`);
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -28,21 +82,34 @@ function LoginForm() {
         <p className="text-sm text-muted">Sign in to your account</p>
       </div>
 
+      {error && (
+        <p className="mb-4 rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>
+      )}
+
       {mode === "password" ? (
-        <form className="flex flex-col gap-4" onSubmit={handleSendCode}>
-          <TextField label="Email address" type="email" placeholder="name@company.com" required />
+        <form className="flex flex-col gap-4" onSubmit={handlePasswordSubmit}>
+          <TextField
+            label="Email address"
+            type="email"
+            placeholder="name@company.com"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
           <TextField
             label="Password"
             type="password"
             placeholder="••••••••"
             required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             labelAction={
               <Link href="/forgot-password" className="text-xs font-semibold text-accent hover:text-accent-hover">
                 Forgot password?
               </Link>
             }
           />
-          <Button type="submit" className="mt-2 w-full py-3">
+          <Button type="submit" className="mt-2 w-full py-3" loading={submitting}>
             Log in
           </Button>
         </form>
@@ -62,11 +129,13 @@ function LoginForm() {
                 type="tel"
                 placeholder="00000 00000"
                 required
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value)}
                 className="w-full rounded-r-lg px-3.5 py-3 text-sm text-ink placeholder:text-muted focus:outline-none"
               />
             </div>
           </div>
-          <Button type="submit" className="flex w-full items-center justify-center gap-2 py-3">
+          <Button type="submit" className="flex w-full items-center justify-center gap-2 py-3" loading={submitting}>
             Send code
             <ArrowRight className="size-4" strokeWidth={2} />
           </Button>
@@ -80,12 +149,26 @@ function LoginForm() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <Button variant="secondary" className="w-full gap-3 py-3">
+        <Button
+          variant="secondary"
+          className="w-full gap-3 py-3"
+          disabled={!authConfig.googleEnabled}
+          title={authConfig.googleEnabled ? undefined : "Google sign-in isn't set up yet"}
+          onClick={() => {
+            window.location.href = "/api/auth/google/start";
+          }}
+        >
           <Image src="/icons/icon-google.svg" alt="" width={18} height={18} />
           Continue with Google
         </Button>
         {mode === "password" ? (
-          <Button variant="secondary" className="w-full gap-3 py-3" onClick={() => setMode("otp")}>
+          <Button
+            variant="secondary"
+            className="w-full gap-3 py-3"
+            disabled={!authConfig.whatsappOtpEnabled}
+            title={authConfig.whatsappOtpEnabled ? undefined : "SMS/WhatsApp sign-in isn't set up yet — use email and password"}
+            onClick={() => setMode("otp")}
+          >
             <Smartphone className="size-[18px]" strokeWidth={2} />
             Continue with Mobile OTP
           </Button>

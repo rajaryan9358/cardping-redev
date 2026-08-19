@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ChannelLink } from "@/lib/types";
+import { clientFetch } from "@/lib/clientFetch";
 
 export function ChannelsClient({ channelLinks: initialLinks }: { channelLinks: ChannelLink[] }) {
   const [channelLinks, setChannelLinks] = useState(initialLinks);
@@ -54,8 +55,10 @@ export function ChannelsClient({ channelLinks: initialLinks }: { channelLinks: C
         title={disconnecting ? `Disconnect ${disconnecting.channel}?` : ""}
         description="Scans from this channel will stop reaching your directory until you reconnect it."
         confirmLabel="Disconnect"
-        onConfirm={() => {
-          setChannelLinks((prev) => prev.filter((l) => l.id !== disconnecting?.id));
+        onConfirm={async () => {
+          if (!disconnecting) return;
+          await clientFetch(`/api/channels/${disconnecting.id}`, { method: "DELETE" });
+          setChannelLinks((prev) => prev.filter((l) => l.id !== disconnecting.id));
           setDisconnecting(null);
         }}
         onCancel={() => setDisconnecting(null)}

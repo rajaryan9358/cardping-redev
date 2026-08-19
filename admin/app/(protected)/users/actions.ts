@@ -73,7 +73,7 @@ export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
     type: "low_balance_alert",
     triggeredBy: "manual",
     adminUserId: admin.id,
-    variables: [user.full_name || "there", String(user.coin_balance)],
+    variables: [user.full_name || "there", String(user.effective_coin_balance)],
   });
 
   await writeAuditLog({

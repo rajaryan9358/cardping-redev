@@ -12,13 +12,13 @@ import { Ids } from "../ids";
 export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
   const { chatId } = msg;
 
-  if (user.blocked_at) {
+  if (user.effective_blocked_at) {
     await telegramClient.sendMessage(chatId, Copy.accountBlocked);
     return;
   }
 
-  if (!hasEnoughCoinsForScan(user.coin_balance)) {
-    await telegramClient.sendMessage(chatId, Copy.insufficientCoins(user.coin_balance));
+  if (!hasEnoughCoinsForScan(user.effective_coin_balance)) {
+    await telegramClient.sendMessage(chatId, Copy.insufficientCoins(user.effective_coin_balance));
     return;
   }
 
@@ -45,7 +45,7 @@ export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWith
   await Promise.all([
     linkCardToInboundMessage(card.id, messageIdStr),
     usersRepo.setActiveVisitingCard(user.user_id, card.id),
-    chargeForCardScan(user.user_id),
+    chargeForCardScan(user.user_id, user.account_id),
   ]);
 
   await telegramClient.sendMessage(chatId, formatCardSummary(extracted), {

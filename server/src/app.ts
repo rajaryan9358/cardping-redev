@@ -1,3 +1,4 @@
+import cookieParser from "cookie-parser";
 import express, { Express } from "express";
 import pinoHttp from "pino-http";
 import { logger } from "./lib/logger";
@@ -6,11 +7,13 @@ import { whatsappWebhookRouter } from "./routes/whatsappWebhook.route";
 import { telegramWebhookRouter } from "./routes/telegramWebhook.route";
 import { googleOAuthRouter } from "./routes/googleOAuth.route";
 import { cashfreeWebhookRouter } from "./routes/cashfreeWebhook.route";
+import { apiRouter } from "./routes/api";
 
 export function createApp(): Express {
   const app = express();
 
   app.use(pinoHttp({ logger }));
+  app.use(cookieParser());
 
   // Captures the exact request bytes onto req.rawBody before parsing, so
   // webhook signature checks (WhatsApp, Cashfree) verify against what the
@@ -18,6 +21,10 @@ export function createApp(): Express {
   app.use(
     express.json({
       verify: (req, _res, buf) => {
+        // body-parser types this callback's req as the bare Node
+        // IncomingMessage, not Express's augmented Request — the cast is
+        // needed here even though rawBody is now properly typed on
+        // Request for every route that reads it back.
         (req as any).rawBody = Buffer.from(buf);
       },
     }),
@@ -28,6 +35,7 @@ export function createApp(): Express {
   app.use(telegramWebhookRouter);
   app.use(googleOAuthRouter);
   app.use(cashfreeWebhookRouter);
+  app.use("/api", apiRouter);
 
   return app;
 }

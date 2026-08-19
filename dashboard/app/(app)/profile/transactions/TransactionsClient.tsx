@@ -33,7 +33,7 @@ export function TransactionsClient({ transactions }: { transactions: Transaction
         <Tr key={txn.id}>
           <Td>{new Date(txn.occurredAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</Td>
           <Td className="flex-[1.6]">{txn.description}</Td>
-          <Td align="right">{txn.amountInr > 0 ? `+₹${(txn.amountInr / 100).toFixed(2)}` : "—"}</Td>
+          <Td align="right">{txn.amountInr > 0 ? `+₹${txn.amountInr.toFixed(2)}` : "—"}</Td>
           <Td align="right">
             <Badge tone={STATUS_TONE[txn.status]}>{STATUS_LABEL[txn.status]}</Badge>
           </Td>
@@ -67,11 +67,13 @@ export function TransactionsClient({ transactions }: { transactions: Transaction
             </div>
             <div className="flex justify-between border-t border-border pt-4">
               <span className="text-muted">Amount</span>
-              <span className="text-lg font-semibold text-ink">₹{(viewingInvoice.amountInr / 100).toFixed(2)}</span>
+              <span className="text-lg font-semibold text-ink">₹{viewingInvoice.amountInr.toFixed(2)}</span>
             </div>
-            <Button variant="secondary" className="mt-2 w-full gap-2">
-              <Download className="size-4" strokeWidth={2} /> Download PDF
-            </Button>
+            <a href={`/api/billing/invoices/${viewingInvoice.invoiceId}/pdf`} target="_blank" rel="noreferrer">
+              <Button variant="secondary" className="mt-2 w-full gap-2">
+                <Download className="size-4" strokeWidth={2} /> Download PDF
+              </Button>
+            </a>
           </div>
         )}
       </Modal>

@@ -236,19 +236,19 @@ export function UsersTable({
                 {!user.wa_id && !user.telegram_id && <span className="text-xs text-muted">—</span>}
               </div>
             </Td>
-            <Td align="right">{user.coin_balance}</Td>
+            <Td align="right">{user.effective_coin_balance}</Td>
             <Td>{user.subscription_tier || "—"}</Td>
             <Td>
-              {user.blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
+              {user.effective_blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
             </Td>
-            <Td align="right">{user.plan_expires_at ? formatDate(user.plan_expires_at) : "—"}</Td>
+            <Td align="right">{user.effective_plan_expires_at ? formatDate(user.effective_plan_expires_at) : "—"}</Td>
             <Td align="right">
               <div className="flex justify-end">
                 <RowActionsMenu
                   actions={[
                     { label: "Adjust coins", icon: <Coins className="size-3.5" strokeWidth={2} />, onClick: () => setCoinsTarget(user) },
                     {
-                      label: user.plan_id ? "Change plan" : "Assign plan",
+                      label: user.effective_plan_id ? "Change plan" : "Assign plan",
                       icon: <CreditCard className="size-3.5" strokeWidth={2} />,
                       onClick: () => setPlanTarget(user),
                     },
@@ -265,14 +265,14 @@ export function UsersTable({
                       disabled: !user.wa_id || alertingFor === user.user_id,
                     },
                     {
-                      label: user.blocked_at ? "Unblock" : "Block",
-                      icon: user.blocked_at ? (
+                      label: user.effective_blocked_at ? "Unblock" : "Block",
+                      icon: user.effective_blocked_at ? (
                         <CheckCircle2 className="size-3.5" strokeWidth={2} />
                       ) : (
                         <Ban className="size-3.5" strokeWidth={2} />
                       ),
                       onClick: () => setBlockTarget(user),
-                      tone: user.blocked_at ? "default" : "danger",
+                      tone: user.effective_blocked_at ? "default" : "danger",
                     },
                   ]}
                 />
@@ -291,18 +291,18 @@ export function UsersTable({
 
       <ConfirmDialog
         open={blockTarget !== null}
-        title={blockTarget?.blocked_at ? "Unblock this user?" : "Block this user?"}
+        title={blockTarget?.effective_blocked_at ? "Unblock this user?" : "Block this user?"}
         description={
-          blockTarget?.blocked_at
+          blockTarget?.effective_blocked_at
             ? `${blockTarget?.full_name || "This user"} will be able to scan cards again.`
             : `${blockTarget?.full_name || "This user"} will no longer be able to scan cards on WhatsApp or Telegram.`
         }
-        confirmLabel={blockTarget?.blocked_at ? "Unblock" : "Block"}
-        danger={!blockTarget?.blocked_at}
+        confirmLabel={blockTarget?.effective_blocked_at ? "Unblock" : "Block"}
+        danger={!blockTarget?.effective_blocked_at}
         onCancel={() => setBlockTarget(null)}
         onConfirm={async () => {
           if (!blockTarget) return;
-          await setUserBlockedAction(blockTarget.user_id, !blockTarget.blocked_at);
+          await setUserBlockedAction(blockTarget.user_id, !blockTarget.effective_blocked_at);
           setBlockTarget(null);
         }}
       />

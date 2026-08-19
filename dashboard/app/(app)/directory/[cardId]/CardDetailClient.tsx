@@ -24,6 +24,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TagAutocomplete } from "@/components/ui/TagAutocomplete";
 import { cn } from "@/lib/cn";
 import { InteractionEvent, VisitingCard } from "@/lib/types";
+import { clientFetch } from "@/lib/clientFetch";
 
 function toHref(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
@@ -79,6 +80,22 @@ export function CardDetailClient({
   const [archived, setArchived] = useState(card.archived);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  async function toggleArchived() {
+    const next = !archived;
+    setArchived(next);
+    await clientFetch(`/api/cards/${card.id}`, { method: "PATCH", body: JSON.stringify({ archived: next }) });
+  }
+
+  async function updateTags(next: string[]) {
+    setTags(next);
+    await clientFetch(`/api/cards/${card.id}`, { method: "PATCH", body: JSON.stringify({ tags: next }) });
+  }
+
+  async function confirmDelete() {
+    await clientFetch(`/api/cards/${card.id}`, { method: "DELETE" });
+    router.push("/directory");
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <Link href="/directory" className="text-sm text-muted hover:text-ink">
@@ -98,7 +115,7 @@ export function CardDetailClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" className="gap-1.5" onClick={() => setArchived((v) => !v)}>
+          <Button variant="secondary" className="gap-1.5" onClick={toggleArchived}>
             {archived ? <ArchiveRestore className="size-4" strokeWidth={2} /> : <Archive className="size-4" strokeWidth={2} />}
             {archived ? "Unarchive" : "Archive"}
           </Button>
@@ -202,7 +219,7 @@ export function CardDetailClient({
 
         <div className="flex flex-col gap-6">
           <Section title="Tags" icon={TagIcon}>
-            <TagAutocomplete tags={tags} onChange={setTags} suggestions={allTags} />
+            <TagAutocomplete tags={tags} onChange={updateTags} suggestions={allTags} />
           </Section>
 
           <Section title="Interaction History" icon={History}>
@@ -226,7 +243,7 @@ export function CardDetailClient({
         title={`Delete ${card.fullName}?`}
         description="This can't be undone. The contact and any notes or voice memos attached to it will be permanently removed."
         confirmLabel="Delete"
-        onConfirm={() => router.push("/directory")}
+        onConfirm={confirmDelete}
         onCancel={() => setDeleteOpen(false)}
       />
     </div>

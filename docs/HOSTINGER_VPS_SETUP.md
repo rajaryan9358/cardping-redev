@@ -99,12 +99,13 @@ Confirm it's up: `curl http://localhost:3000/health` should return `{"ok":true,.
 
 ## 8. nginx reverse proxy + TLS
 
-All three apps share one domain and one nginx host: `server/` (Express, port 3000) and
-`dashboard/` (Next.js, port 3100) on the root paths, `admin/` (Next.js, port 3200) at the `/admin`
-prefix — see [step 11](#11-deploy-the-admin-app). On the shared domain, route the backend by exact
-path, not by prefix — the five backend paths below are the *complete* list (grep
-`server/src/routes/*.ts` for `router.(get|post)` if that ever changes), so anything not matching
-one of them, and not under `/admin`, falls through to the dashboard.
+All three apps share one domain and one nginx host: `server/` (Express, port 3000) on the root
+webhook/OAuth paths *and* the `/api/*` prefix (dashboard/'s JSON API — see
+docs/DASHBOARD_PLAN.md), `dashboard/` (Next.js, port 3100) on everything else, `admin/` (Next.js,
+port 3200) at the `/admin` prefix — see [step 11](#11-deploy-the-admin-app). Route the five
+non-`/api` backend paths below by exact match (grep `server/src/routes/*.ts` for
+`router.(get|post)`, excluding `routes/api/*`, if that ever changes) — anything not matching one
+of them, not under `/api`, and not under `/admin`, falls through to the dashboard.
 
 ```bash
 sudo apt install -y nginx certbot python3-certbot-nginx
@@ -122,6 +123,16 @@ server {
     location = /webhooks/telegram { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
     location = /webhooks/cashfree { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
     location = /oauth/google/callback { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+
+    # dashboard/'s JSON API (server/src/routes/api/*) — cookies stay
+    # same-origin since this is the same domain as dashboard/ itself, no
+    # CORS config needed. See lib/serverFetch.ts / lib/clientFetch.ts.
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:3100;

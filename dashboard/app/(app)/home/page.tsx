@@ -7,12 +7,18 @@ import { ScansExplorer } from "@/components/scans/ScansExplorer";
 import { getCurrentAccount } from "@/lib/data/account";
 import { allTags, getRecentCards } from "@/lib/data/cards";
 import { getEvents } from "@/lib/data/events";
+import { getHomeSummary } from "@/lib/data/home";
 import { getPlans } from "@/lib/data/billing";
 import { getPlanStatus } from "@/lib/planStatus";
 
 export default async function HomePage() {
   const account = await getCurrentAccount();
-  const [recentCards, events, plans] = await Promise.all([getRecentCards(10), getEvents(), getPlans()]);
+  const [recentCards, events, plans, summary] = await Promise.all([
+    getRecentCards(10),
+    getEvents(),
+    getPlans(),
+    getHomeSummary(),
+  ]);
   const lowBalance = account.coinBalance <= LOW_BALANCE_THRESHOLD;
   const planStatus = getPlanStatus(account, plans);
 
@@ -27,16 +33,19 @@ export default async function HomePage() {
       </div>
 
       <div className="flex gap-4">
-        <StatCard label="Total Contacts" value={recentCards.length} icon={Users} />
-        <StatCard label="Total Events" value={events.filter((e) => !e.isMiscellaneous).length} icon={Calendar} />
+        <StatCard label="Total Contacts" value={summary.totalContacts} icon={Users} />
+        <StatCard label="Total Events" value={summary.totalEvents} icon={Calendar} />
         <StatCard
           label="Scans This Week"
-          value={recentCards.length}
+          value={summary.scansThisWeek}
           icon={ScanLine}
           trend={
-            <span className="flex items-center gap-1 text-sm text-success-text">
-              <TrendingUp className="size-3.5" strokeWidth={2.25} /> +12%
-            </span>
+            summary.scansTrendPct !== null ? (
+              <span className={`flex items-center gap-1 text-sm ${summary.scansTrendPct >= 0 ? "text-success-text" : "text-danger-text"}`}>
+                <TrendingUp className="size-3.5" strokeWidth={2.25} /> {summary.scansTrendPct >= 0 ? "+" : ""}
+                {summary.scansTrendPct}%
+              </span>
+            ) : undefined
           }
         />
       </div>

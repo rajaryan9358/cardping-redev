@@ -28,7 +28,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{user.full_name || "Unnamed user"}</h1>
-            {user.blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
+            {user.effective_blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted">
             <span>{user.email || "No email on file"}</span>
@@ -55,7 +55,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Coin balance</p>
-          <p className="mt-2 text-3xl font-semibold text-ink">{user.coin_balance}</p>
+          <p className="mt-2 text-3xl font-semibold text-ink">{user.effective_coin_balance}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Events</p>

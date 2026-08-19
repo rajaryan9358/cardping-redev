@@ -103,6 +103,157 @@ async function findByMessageId(messageId: string): Promise<VisitingCard | null> 
   return data as VisitingCard | null;
 }
 
+// ── dashboard/ account-scoped access ────────────────────────────────────
+// Every function below takes `usersIds` (the account's linked channel
+// identities, resolved via channelLinksRepo.listByAccountId) rather than
+// a single userId — this is the mechanism behind "scan on WhatsApp and
+// Telegram, see both in one Directory." Never trust a bare card id
+// without also filtering by this set.
+
+export interface CardFilters {
+  query?: string;
+  eventId?: string;
+  tag?: string;
+  archived?: boolean;
+}
+
+export interface DashboardCard extends VisitingCard {
+  event: { id: string; name: string } | null;
+}
+
+const DASHBOARD_CARD_SELECT = "*, event:events(id, name)";
+
+function applyFilters(query: any, usersIds: string[], filters: CardFilters) {
+  query = query.in("user_id", usersIds);
+  if (filters.eventId) query = query.eq("event_id", filters.eventId);
+  if (filters.tag) query = query.contains("tags", [filters.tag]);
+  if (filters.archived !== undefined) query = query.eq("archived", filters.archived);
+  if (filters.query) {
+    const q = `%${filters.query}%`;
+    query = query.or(`full_name.ilike.${q},company_name.ilike.${q},"position".ilike.${q}`);
+  }
+  return query;
+}
+
+async function listForAccount(
+  usersIds: string[],
+  filters: CardFilters,
+  page: number,
+  pageSize: number,
+): Promise<{ cards: DashboardCard[]; total: number }> {
+  if (usersIds.length === 0) return { cards: [], total: 0 };
+
+  let query = supabase.from("visiting_cards").select(DASHBOARD_CARD_SELECT, { count: "exact" });
+  query = applyFilters(query, usersIds, filters);
+  const from = (page - 1) * pageSize;
+  const { data, error, count } = await query.order("created_at", { ascending: false }).range(from, from + pageSize - 1);
+  if (error) throw error;
+  return { cards: (data ?? []) as unknown as DashboardCard[], total: count ?? 0 };
+}
+
+async function getRecentForAccount(usersIds: string[], limit: number): Promise<DashboardCard[]> {
+  if (usersIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("visiting_cards")
+    .select(DASHBOARD_CARD_SELECT)
+    .in("user_id", usersIds)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as unknown as DashboardCard[];
+}
+
+async function findByIdForAccount(cardId: string, usersIds: string[]): Promise<DashboardCard | null> {
+  if (usersIds.length === 0) return null;
+  const { data, error } = await supabase
+    .from("visiting_cards")
+    .select(DASHBOARD_CARD_SELECT)
+    .eq("id", cardId)
+    .in("user_id", usersIds)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown as DashboardCard | null;
+}
+
+export interface CardUpdateInput {
+  full_name?: string | null;
+  position?: string | null;
+  company_name?: string | null;
+  business_email?: string | null;
+  personal_email?: string | null;
+  phone1?: string | null;
+  phone2?: string | null;
+  website?: string | null;
+  address?: string | null;
+  linkedin?: string | null;
+  twitter?: string | null;
+  facebook?: string | null;
+  instagram?: string | null;
+  transcribed_note?: string | null;
+  tags?: string[];
+  archived?: boolean;
+  event_id?: string | null;
+}
+
+async function updateForAccount(cardId: string, usersIds: string[], patch: CardUpdateInput): Promise<DashboardCard | null> {
+  if (usersIds.length === 0) return null;
+  const { data, error } = await supabase
+    .from("visiting_cards")
+    .update(patch)
+    .eq("id", cardId)
+    .in("user_id", usersIds)
+    .select(DASHBOARD_CARD_SELECT)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown as DashboardCard | null;
+}
+
+async function deleteForAccount(cardId: string, usersIds: string[]): Promise<void> {
+  if (usersIds.length === 0) return;
+  const { error } = await supabase.from("visiting_cards").delete().eq("id", cardId).in("user_id", usersIds);
+  if (error) throw error;
+}
+
+async function bulkUpdateForAccount(ids: string[], usersIds: string[], patch: CardUpdateInput): Promise<void> {
+  if (usersIds.length === 0 || ids.length === 0) return;
+  const { error } = await supabase.from("visiting_cards").update(patch).in("id", ids).in("user_id", usersIds);
+  if (error) throw error;
+}
+
+/** Adds tags without clobbering each card's existing ones — bulk "add
+ * tags" is additive, unlike bulkUpdateForAccount's plain overwrite (used
+ * for single-card edits, where the client sends the full desired list). */
+async function bulkAddTagsForAccount(ids: string[], usersIds: string[], tagsToAdd: string[]): Promise<void> {
+  if (usersIds.length === 0 || ids.length === 0 || tagsToAdd.length === 0) return;
+  const existing = await supabase.from("visiting_cards").select("id, tags").in("id", ids).in("user_id", usersIds);
+  if (existing.error) throw existing.error;
+  await Promise.all(
+    (existing.data ?? []).map((row: any) => {
+      const merged = Array.from(new Set([...(row.tags ?? []), ...tagsToAdd]));
+      return supabase.from("visiting_cards").update({ tags: merged }).eq("id", row.id);
+    }),
+  );
+}
+
+async function bulkDeleteForAccount(ids: string[], usersIds: string[]): Promise<void> {
+  if (usersIds.length === 0 || ids.length === 0) return;
+  const { error } = await supabase.from("visiting_cards").delete().in("id", ids).in("user_id", usersIds);
+  if (error) throw error;
+}
+
+async function countScansSince(usersIds: string[], sinceIso: string, untilIso?: string): Promise<number> {
+  if (usersIds.length === 0) return 0;
+  let query = supabase
+    .from("visiting_cards")
+    .select("id", { count: "exact", head: true })
+    .in("user_id", usersIds)
+    .gte("created_at", sinceIso);
+  if (untilIso) query = query.lt("created_at", untilIso);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export const visitingCardsRepo = {
   create,
   setMessageId,
@@ -110,4 +261,13 @@ export const visitingCardsRepo = {
   setVoiceNote,
   findById,
   findByMessageId,
+  listForAccount,
+  getRecentForAccount,
+  findByIdForAccount,
+  updateForAccount,
+  deleteForAccount,
+  bulkUpdateForAccount,
+  bulkAddTagsForAccount,
+  bulkDeleteForAccount,
+  countScansSince,
 };

@@ -21,3 +21,6 @@ des/
 
 # Playwright MCP browser-testing artifacts (screenshots, traces).
 .playwright-mcp/
+
+# Claude Code local session settings — machine-specific, not app config.
+.claude/

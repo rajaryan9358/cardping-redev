@@ -63,6 +63,52 @@ export interface UserWithEvent {
   created_at: string;
   updated_at: string;
   export_sheet_id: string | null;
+  // Resolved through channel_links/accounts when this channel identity is
+  // linked to a dashboard login — see walletService.ts and the
+  // "dashboard/ real accounts" block in schema.sql. account_id is null,
+  // and the effective_* columns fall back to the legacy columns above,
+  // for anyone who hasn't linked a channel.
+  account_id: string | null;
+  linked_account_email: string | null;
+  effective_coin_balance: number;
+  effective_blocked_at: string | null;
+  effective_plan_id: string | null;
+  effective_plan_expires_at: string | null;
+}
+
+/** A dashboard login — deliberately separate from `User`/`UserWithEvent`
+ * (a bot channel identity). See the "dashboard/ real accounts" block in
+ * db/schema.sql and docs/DASHBOARD_PLAN.md for the full identity model. */
+export interface Account {
+  id: string;
+  email: string | null;
+  email_verified_at: string | null;
+  password_hash: string | null;
+  google_id: string | null;
+  mobile: string | null;
+  mobile_verified_at: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: "user" | "admin";
+  blocked_at: string | null;
+  onboarded_at: string | null;
+  coin_balance: number;
+  plan_id: string | null;
+  plan_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ChannelLinkChannel = "whatsapp" | "telegram";
+
+export interface ChannelLink {
+  id: string;
+  account_id: string;
+  users_id: string;
+  channel: ChannelLinkChannel;
+  channel_identifier: string;
+  verified_at: string | null;
+  created_at: string;
 }
 
 export interface EventRow {
@@ -108,13 +154,17 @@ export type TransactionType =
   | "coin_purchase"
   | "coin_bonus"
   | "refund"
-  | "admin_adjustment";
+  | "admin_adjustment"
+  | "subscription_payment";
 
 export interface Transaction {
   id: string;
   user_id: string | null;
+  account_id: string | null;
   type: TransactionType;
   coins: number;
+  amount_inr: number | null;
+  plan_id: string | null;
   status: "pending" | "completed" | "failed";
   cashfree_link_id: string | null;
   stripe_id: string | null;

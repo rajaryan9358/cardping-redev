@@ -1,9 +1,13 @@
 "use client";
 
-import { BadgeCheck, Building2, Lock, LucideIcon, Mail } from "lucide-react";
+import { BadgeCheck, Building2, Lock, LucideIcon, Mail, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
+import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
+import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 
 function IconField({
   icon: Icon,
@@ -20,12 +24,83 @@ function IconField({
   );
 }
 
-export default function SignUpPage() {
-  const router = useRouter();
+const ERROR_MESSAGES: Record<string, string> = {
+  email_already_registered: "An account with this email already exists.",
+};
 
-  function handleSubmit(e: React.FormEvent) {
+function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? "Something went wrong. Please try again.";
+}
+
+function maskIdentifier(identifier: string): string {
+  const kept = identifier.slice(-4);
+  return `${identifier.slice(0, -4).replace(/\d/g, "•")}${kept}`;
+}
+
+interface ChannelContext {
+  channel: "whatsapp" | "telegram";
+  channelIdentifier: string;
+}
+
+function SignUpForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const onboardToken = searchParams.get("onboard");
+  const { startingCoins } = useAuthConfig();
+
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [channelContext, setChannelContext] = useState<ChannelContext | null>(null);
+  const [tokenExpired, setTokenExpired] = useState(false);
+
+  useEffect(() => {
+    if (!onboardToken) return;
+    clientFetch(`/api/onboarding/channel-token?token=${encodeURIComponent(onboardToken)}`)
+      .then((res) => parseJsonOrThrow<ChannelContext>(res))
+      .then(setChannelContext)
+      .catch(() => setTokenExpired(true));
+  }, [onboardToken]);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    router.push("/onboarding");
+    setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await clientFetch("/api/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+          fullName: fullName || undefined,
+          onboardToken: channelContext ? onboardToken : undefined,
+        }),
+      });
+      const { linkedChannel, returnUrl } = await parseJsonOrThrow<{ linkedChannel?: string; returnUrl?: string }>(res);
+      router.push(
+        linkedChannel
+          ? `/onboarding/connected?channel=${linkedChannel}&returnUrl=${encodeURIComponent(returnUrl ?? "")}`
+          : "/onboarding",
+      );
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -37,22 +112,67 @@ export default function SignUpPage() {
       </div>
 
       <div className="flex flex-col gap-6 rounded-2xl border border-border bg-white p-8 shadow-soft">
+        {channelContext && (
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-success-bg px-4 py-3">
+            <MessageCircle className="size-4 shrink-0 text-success-text" strokeWidth={2} />
+            <p className="text-sm font-medium text-success-text">
+              Connecting your {channelContext.channel === "whatsapp" ? "WhatsApp" : "Telegram"}
+              {channelContext.channel === "whatsapp" ? ` number ending ${maskIdentifier(channelContext.channelIdentifier)}` : " account"}
+            </p>
+          </div>
+        )}
+        {tokenExpired && (
+          <Banner message="That link has expired — send another message on WhatsApp or Telegram to get a fresh one. You can still sign up below." />
+        )}
+
+        {error && (
+          <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>
+        )}
+
         <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold tracking-wide text-muted-2">Full name</label>
-            <IconField icon={Building2} type="text" placeholder="Jane Doe" required />
+            <IconField
+              icon={Building2}
+              type="text"
+              placeholder="Jane Doe"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold tracking-wide text-muted-2">Email address</label>
-            <IconField icon={Mail} type="email" placeholder="you@company.com" required />
+            <IconField
+              icon={Mail}
+              type="email"
+              placeholder="you@company.com"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold tracking-wide text-muted-2">Password</label>
-            <IconField icon={Lock} type="password" placeholder="••••••••" required />
+            <IconField
+              icon={Lock}
+              type="password"
+              placeholder="••••••••"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold tracking-wide text-muted-2">Confirm password</label>
-            <IconField icon={Lock} type="password" placeholder="••••••••" required />
+            <IconField
+              icon={Lock}
+              type="password"
+              placeholder="••••••••"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
           </div>
 
           <label className="flex items-start gap-3 text-sm text-muted">
@@ -62,7 +182,7 @@ export default function SignUpPage() {
             </span>
           </label>
 
-          <Button type="submit" className="w-full py-3">
+          <Button type="submit" className="w-full py-3" loading={submitting}>
             Create account
           </Button>
         </form>
@@ -70,7 +190,7 @@ export default function SignUpPage() {
         <div className="flex justify-center border-t border-border pt-6">
           <div className="flex items-center gap-2 rounded-full bg-accent-soft px-4 py-2">
             <BadgeCheck className="size-4 text-accent" strokeWidth={2} />
-            <span className="text-xs font-semibold tracking-wide text-accent-text">50 free scans to start, no card required</span>
+            <span className="text-xs font-semibold tracking-wide text-accent-text">{startingCoins} free scans to start, no card required</span>
           </div>
         </div>
       </div>
@@ -82,5 +202,13 @@ export default function SignUpPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense>
+      <SignUpForm />
+    </Suspense>
   );
 }

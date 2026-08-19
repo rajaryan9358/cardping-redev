@@ -7,6 +7,8 @@ import { cashfreeClient } from "../integrations/cashfree/client";
  * the payment completes (see routes/cashfreeWebhook.route.ts). */
 export async function createTopUpLink(userId: string, phoneNumber: string): Promise<string> {
   const link = await cashfreeClient.createPaymentLink({
+    amountInr: env.COIN_TOPUP_AMOUNT_INR,
+    purpose: "CardPing coin top-up",
     phoneNumber,
     notifyUrl: `${env.PUBLIC_BASE_URL}/webhooks/cashfree`,
   });

@@ -1,39 +1,22 @@
-"use client";
-
-import { Coins } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect } from "react";
 import { Button } from "@/components/ui/Button";
 import { SuccessCheck } from "@/components/ui/SuccessCheck";
 
-const REDIRECT_MS = 5000;
-
-function SubscriptionSuccessContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const planName = searchParams.get("plan") ?? "your plan";
-  const price = Number(searchParams.get("price") ?? 0);
-  const coins = Number(searchParams.get("coins") ?? 0);
-
-  useEffect(() => {
-    const timer = setTimeout(() => router.push("/subscription"), REDIRECT_MS);
-    return () => clearTimeout(timer);
-  }, [router]);
-
+// Cashfree's hosted checkout redirects here after payment — but only ever
+// to this one static URL (no per-transaction query params), and payment
+// confirmation itself arrives separately via webhook (see
+// server/src/routes/cashfreeWebhook.route.ts), which may not have landed
+// yet by the time the browser gets here. So this stays a generic
+// "we're on it" page rather than claiming a specific plan/price it can't
+// actually confirm yet.
+export default function SubscriptionSuccessPage() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-10 text-center shadow-soft animate-fade-up">
       <SuccessCheck />
-      <h1 className="text-2xl font-semibold text-ink">You&apos;re on {planName}!</h1>
+      <h1 className="text-2xl font-semibold text-ink">Payment received</h1>
       <p className="text-sm text-muted">
-        Your subscription is active. ₹{price.toLocaleString()}/mo, with {coins.toLocaleString()} coins refreshed every billing
-        cycle.
+        We&apos;re confirming it now — your plan and coin balance will update within a minute or two.
       </p>
-
-      <div className="flex items-center gap-2 rounded-full bg-accent-soft px-5 py-2.5">
-        <Coins className="size-4 text-accent" strokeWidth={2} />
-        <span className="text-sm font-semibold text-accent-text">{coins.toLocaleString()} coins / cycle</span>
-      </div>
 
       <div className="flex w-full gap-3 pt-2">
         <Link href="/home" className="flex-1">
@@ -45,16 +28,6 @@ function SubscriptionSuccessContent() {
           <Button className="w-full">View Subscription</Button>
         </Link>
       </div>
-
-      <p className="text-xs text-muted">Redirecting to Subscription automatically…</p>
     </div>
-  );
-}
-
-export default function SubscriptionSuccessPage() {
-  return (
-    <Suspense>
-      <SubscriptionSuccessContent />
-    </Suspense>
   );
 }

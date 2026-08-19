@@ -59,7 +59,7 @@ export function AdjustCoinsModal({
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">
-          Current balance: <span className="font-medium text-ink">{user.coin_balance}</span> coins
+          Current balance: <span className="font-medium text-ink">{user.effective_coin_balance}</span> coins
         </p>
         <TextField
           label="Amount"

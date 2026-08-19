@@ -27,14 +27,35 @@ export async function setUserPlanAction(userId: string, planId: string): Promise
   revalidatePath(`/users/${userId}`);
 }
 
+/** Same as setUserPlanAction, targeting an account directly — for the
+ * Subscribed Accounts section (accounts with no linked channel, so
+ * there's no users row to key off). */
+export async function setAccountPlanAction(accountId: string, planId: string): Promise<void> {
+  const admin = await requireAdmin();
+  const plans = await adminSubscriptionsRepo.listPlans();
+  const plan = plans.find((p) => p.id === planId);
+  if (!plan) throw new Error("Unknown plan.");
+
+  await adminSubscriptionsRepo.setAccountPlan(accountId, plan);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: "subscription.set_plan",
+    targetTable: "accounts",
+    targetId: accountId,
+    detail: { planId: plan.id, priceInr: plan.price_inr },
+  });
+
+  revalidatePath("/subscriptions");
+}
+
 export async function sendRenewalReminderAction(userId: string): Promise<void> {
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
   if (!user) throw new Error("User not found.");
   if (!user.wa_id) throw new Error("This user has no WhatsApp number on file.");
 
-  const daysLeft = user.plan_expires_at
-    ? Math.max(0, Math.ceil((new Date(user.plan_expires_at).getTime() - Date.now()) / 86400000))
+  const daysLeft = user.effective_plan_expires_at
+    ? Math.max(0, Math.ceil((new Date(user.effective_plan_expires_at).getTime() - Date.now()) / 86400000))
     : 0;
 
   await sendNotification({

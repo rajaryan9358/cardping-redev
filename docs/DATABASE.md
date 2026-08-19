@@ -58,7 +58,9 @@ pattern as `plans`.
 ### `events`
 
 An event is just a label (`name`) a user's scans get grouped under, created via "Set an Event" /
-`/setevent`. `users.active_event_id` points at the one currently in use.
+`/setevent`, or from `dashboard/`'s Events page. `users.active_event_id` points at the one
+currently in use. `location`, `event_date`, `thumbnail_path`/`thumbnail_public_url` *(new)* are
+dashboard-only fields (bots never set them) — see `dashboard/`'s Events UI.
 
 ### `visiting_cards`
 
@@ -68,7 +70,8 @@ inbound message id of the *photo* — used to match a later voice-note reply bac
 Supabase Storage; `voice_note_path` / `voice_note_public_url` at the transcribed voice note, if
 any. `extraction_confidence` *(new)* is GPT-4o's own `0.5`–`1.0` confidence score for the scan
 (`ExtractedCard.confidence`), persisted since `admin/`'s Cards page uses it to surface
-low-confidence scans worth a manual look.
+low-confidence scans worth a manual look. `archived` and `tags text[]` *(new)* back
+`dashboard/`'s Directory (archive action, tag filter/bulk-tag — GIN-indexed).
 
 ### `gmail_tokens`
 
@@ -84,13 +87,17 @@ card it's about.
 
 ### `transactions`
 
-An audit log of coin movements. `type` is one of `card_scan` (−1, recorded automatically on every
-scan), `coin_purchase` (+N, from a Cashfree top-up), `coin_bonus`, `refund`, `admin_adjustment`
-*(new)* — a manual balance change made from `admin/`'s Users page — or `subscription_payment`
-*(new)* — a plan assigned from `admin/`'s Subscriptions page. `amount_inr` *(new)* and `plan_id`
-*(new, references `plans.id`)* are only set on `subscription_payment` rows — `coins` alone can't
-represent a currency amount, and "total earning" on the Subscriptions summary is
-`sum(amount_inr) where type='subscription_payment' and status='completed'`.
+An audit log of coin/money movements. `type` is one of `card_scan` (−1, recorded automatically on
+every scan), `coin_purchase` (+N, from a Cashfree top-up), `coin_bonus`, `refund`,
+`admin_adjustment` — a manual balance change made from `admin/`'s Users page — or
+`subscription_payment` — a plan purchase, whether assigned manually from `admin/`'s Subscriptions
+page or bought for real through `dashboard/`'s billing flow. `amount_inr` and `plan_id`
+(references `plans.id`) are only set on `subscription_payment` rows. `account_id uuid null`
+*(new, references `accounts.id`)* coexists with the original `user_id` — `user_id` is "which
+channel identity triggered this," `account_id` is "whose wallet this affected"; a legacy bot-only
+card scan sets only `user_id`, a dashboard billing transaction sets only `account_id`. "Total
+earning" on the Subscriptions summary is `sum(amount_inr) where type='subscription_payment' and
+status='completed'`, across both.
 
 ### `admin_users`, `admin_sessions`, `admin_audit_log` *(new)*
 
@@ -116,6 +123,31 @@ One row per renewal-reminder / low-balance-alert WhatsApp send attempt, auto or 
 (`type`, `triggered_by`, reuses `broadcast_channel`/`broadcast_recipient_status` rather than adding
 near-duplicate enums; `admin_user_id` set only for manual sends). See
 [ADMIN_APP.md](./ADMIN_APP.md#proactive-whatsapp-notifications).
+
+### `accounts`, `channel_links`, `sessions`, `otp_codes`, `invoices` *(new)*
+
+`dashboard/`'s real identity model — see [DASHBOARD_PLAN.md](./DASHBOARD_PLAN.md) for the full
+design. **`accounts`** is a dashboard login (email/password, Google, or verified mobile), with its
+own wallet (`coin_balance`, `plan_id`, `plan_expires_at`) — deliberately separate from `users` (a
+bot channel identity). `users.coin_balance`/`blocked_at`/`plan_id`/`plan_expires_at` are **not**
+vestigial: they stay authoritative forever for any channel identity that never links to an
+account, because a brand-new phone number's very first scan happens before any account could
+possibly exist. **`channel_links`** is what resolves a `users` row to an `accounts` row once (and
+if) someone connects that channel from the dashboard — unique on `(channel, channel_identifier)`
+*and* on `users_id` (a channel resolves to at most one account). **`sessions`** is the same
+opaque-cookie pattern as `admin_sessions`, plus `device_label`/`user_agent` for the Profile →
+Sessions screen. **`otp_codes`** holds sha256-hashed codes for both login OTP and channel-link OTP
+(`purpose` distinguishes them; for a Telegram deep-link code, `target` holds the requesting
+account's id instead of a phone number, since the inbound `/start <code>` has nothing else to key
+on). **`invoices`** is one row per completed billing transaction, PDF generated on the fly and
+stored in the private `invoices` bucket (signed URLs only — unlike the public card/voice buckets).
+
+`user_with_event` gained `account_id`, `linked_account_email`, and four `effective_*` columns
+(`effective_coin_balance`, `effective_blocked_at`, `effective_plan_id`,
+`effective_plan_expires_at`) — each `coalesce(account's value, legacy users value)`. `admin/`
+reads and writes through these, not the raw columns, so its Users/Subscriptions pages show and
+act on the right value whether a channel is linked or not (see `adminUsers.repo.ts`'s
+`resolveAccountId` branch on `setBlocked`/`adjustCoins`).
 
 ## Views
 
@@ -150,22 +182,32 @@ the original n8n export but not defined in it — recreated here from its usage.
 The top-up counterpart, used by the Cashfree payment webhook to credit coins once a payment link
 is paid.
 
-### `admin_adjust_coin_balance(user_uuid, delta, reason)` *(new)*
+### `admin_adjust_coin_balance(user_uuid, delta, reason)`
 
 Same floor-at-zero behavior, but `delta` can be negative (deduct) or positive (add), and it also
-inserts the corresponding `admin_adjustment` transaction row. Used only by `admin/`'s Users page.
+inserts the corresponding `admin_adjustment` transaction row.
 
-Assigning a plan (`admin/`'s Subscriptions → "Change plan") doesn't get its own RPC — it's three
-plain statements in `adminSubscriptionsRepo.setUserPlan`: update `users.plan_id`/`plan_expires_at`,
-call the existing `increment_coin_balance` RPC for the plan's `coins_included`, and insert the
+### `account_decrement_coin_balance(account_uuid)`, `account_increment_coin_balance(account_uuid, amount)`, `admin_adjust_account_coin_balance(account_uuid, delta, reason)` *(new)*
+
+The same three RPCs above, targeting `accounts` instead of `users` — used once a bot channel
+identity is linked (`services/walletService.ts`) or when `admin/`'s Users/Subscriptions actions
+resolve to a linked account (`adminUsers.repo.ts#resolveAccountId`).
+
+Assigning a plan (`admin/`'s Subscriptions → "Change plan", or a real purchase through
+`dashboard/`'s billing flow) doesn't get its own RPC — it's a few plain statements in
+`setUserPlan`/`setAccountPlan`/the Cashfree webhook handler: update `plan_id`/`plan_expires_at`
+(extending from the current expiry if it's still in the future, else starting fresh from now),
+call the matching `increment_coin_balance` RPC for the plan's `coins_included`, and insert the
 `subscription_payment` transaction row.
 
 ## Storage buckets
 
-Two buckets, `visiting-cards` and `voice-notes`, both public-read with unguessable
-`{user_id}/{random}...` object paths (matching the original workflow's approach — see
-`server/db/schema.sql` for the tradeoff and how to switch to signed URLs if you'd rather have hard
-access control instead).
+`visiting-cards` and `voice-notes` are public-read with unguessable `{user_id}/{random}...` object
+paths (matching the original workflow's approach — see `server/db/schema.sql` for the tradeoff and
+how to switch to signed URLs if you'd rather have hard access control instead). `event-thumbnails`
+*(new)* is the same public-read pattern, for `dashboard/`'s Events. `invoices` *(new)* is
+**private** — invoices carry billing PII, so `GET /api/billing/invoices/:id/pdf` always serves them
+via a short-lived `createSignedUrl()`, never a public URL.
 
 ## Changes from the original schema
 

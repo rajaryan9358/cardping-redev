@@ -12,9 +12,9 @@ import { sendMessageAction } from "./actions";
 const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
 
 function defaultMessageFor(user: AdminUserRow): string {
-  if (!user.plan_expires_at) return "";
+  if (!user.effective_plan_expires_at) return "";
   const name = user.full_name || "there";
-  return `Hi ${name}, your plan expires on ${formatDate(user.plan_expires_at)}. Renew soon to keep your benefits.`;
+  return `Hi ${name}, your plan expires on ${formatDate(user.effective_plan_expires_at)}. Renew soon to keep your benefits.`;
 }
 
 export function SendMessageModal({ user, onClose }: { user: AdminUserRow | null; onClose: () => void }) {

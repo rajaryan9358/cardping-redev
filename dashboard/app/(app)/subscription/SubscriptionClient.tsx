@@ -2,7 +2,6 @@
 
 import { Check, Coins, CreditCard, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { LowBalanceCard, LOW_BALANCE_THRESHOLD } from "@/components/ui/LowBalanceCard";
@@ -10,6 +9,16 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/cn";
 import { getPlanStatus } from "@/lib/planStatus";
 import { Account, Plan } from "@/lib/types";
+import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  billing_not_configured: "Payments aren't set up yet — check back soon.",
+  plan_not_found: "That plan is no longer available.",
+};
+
+function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? "Couldn't start checkout. Please try again.";
+}
 
 function planDescription(name: string): string {
   if (name === "Starter") return "Essential tools for individuals and small setups.";
@@ -18,7 +27,6 @@ function planDescription(name: string): string {
 }
 
 export function SubscriptionClient({ account, plans }: { account: Account; plans: Plan[] }) {
-  const router = useRouter();
   const coinBalance = account.coinBalance;
   const currentPlan = plans.find((p) => p.id === account.planId);
   const status = getPlanStatus({ ...account, coinBalance }, plans);
@@ -26,15 +34,25 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
 
   const [pendingPlan, setPendingPlan] = useState<Plan | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function confirmPlanSwitch() {
+  async function confirmPlanSwitch() {
     if (!pendingPlan) return;
     setConfirming(true);
-    setTimeout(() => {
-      router.push(
-        `/subscription/success?plan=${encodeURIComponent(pendingPlan.name)}&price=${pendingPlan.priceInr}&coins=${pendingPlan.coinsIncluded}`,
-      );
-    }, 900);
+    setError(null);
+    try {
+      const res = await clientFetch("/api/billing/subscribe", {
+        method: "POST",
+        body: JSON.stringify({ planId: pendingPlan.id }),
+      });
+      const { paymentLinkUrl } = await parseJsonOrThrow<{ paymentLinkUrl: string }>(res);
+      // Cashfree's hosted checkout — payment confirmation comes back via
+      // webhook, not this redirect (see server/src/routes/cashfreeWebhook.route.ts).
+      window.location.href = paymentLinkUrl;
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+      setConfirming(false);
+    }
   }
 
   return (
@@ -150,10 +168,13 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
         }
       >
         {pendingPlan && (
-          <p className="text-sm text-muted">
-            You&apos;ll be charged ₹{pendingPlan.priceInr.toLocaleString()}/month starting today, and your coin allotment will change to{" "}
-            {pendingPlan.coinsIncluded.toLocaleString()} coins per billing cycle.
-          </p>
+          <div className="flex flex-col gap-3">
+            {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
+            <p className="text-sm text-muted">
+              You&apos;ll be redirected to a secure payment page to pay ₹{pendingPlan.priceInr.toLocaleString()}, and your
+              coin allotment will change to {pendingPlan.coinsIncluded.toLocaleString()} coins per billing cycle.
+            </p>
+          </div>
         )}
       </Modal>
     </div>

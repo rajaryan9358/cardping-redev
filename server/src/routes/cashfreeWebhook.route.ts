@@ -2,8 +2,11 @@ import { Router } from "express";
 import { cashfreeClient } from "../integrations/cashfree/client";
 import { transactionsRepo } from "../db/repositories/transactions.repo";
 import { usersRepo } from "../db/repositories/users.repo";
+import { accountsRepo } from "../db/repositories/accounts.repo";
+import { plansRepo } from "../db/repositories/plans.repo";
 import { whatsappClient } from "../integrations/whatsapp/client";
 import { telegramClient } from "../integrations/telegram/client";
+import { generateForTransaction } from "../services/invoiceService";
 import { env } from "../config/env";
 import { childLogger } from "../lib/logger";
 
@@ -41,7 +44,7 @@ cashfreeWebhookRouter.post("/webhooks/cashfree", async (req, res) => {
     }
 
     const transaction = await transactionsRepo.findByCashfreeLinkId(linkId);
-    if (!transaction || !transaction.user_id) {
+    if (!transaction || (!transaction.user_id && !transaction.account_id)) {
       log.warn({ linkId }, "Cashfree webhook for unknown link_id");
       return;
     }
@@ -57,10 +60,47 @@ cashfreeWebhookRouter.post("/webhooks/cashfree", async (req, res) => {
       return;
     }
 
-    await usersRepo.incrementCoinBalance(transaction.user_id, transaction.coins);
+    // Dashboard-originated purchase (subscription or account-scoped coin
+    // top-up) — everything else below this branch is the original,
+    // untouched legacy bot-triggered top-up path.
+    if (transaction.account_id) {
+      const account = await accountsRepo.findById(transaction.account_id);
+      if (!account) {
+        log.warn({ accountId: transaction.account_id }, "Cashfree webhook for unknown account");
+        return;
+      }
+
+      if (transaction.type === "subscription_payment" && transaction.plan_id) {
+        const plan = await plansRepo.findById(transaction.plan_id);
+        if (plan) {
+          const base =
+            account.plan_expires_at && new Date(account.plan_expires_at).getTime() > Date.now()
+              ? new Date(account.plan_expires_at)
+              : new Date();
+          const expiresAt = new Date(base.getTime() + plan.period_days * 24 * 60 * 60 * 1000);
+          await accountsRepo.update(account.id, { plan_id: plan.id, plan_expires_at: expiresAt.toISOString() });
+          await accountsRepo.incrementCoinBalance(account.id, plan.coins_included);
+        }
+      } else {
+        await accountsRepo.incrementCoinBalance(account.id, transaction.coins);
+      }
+
+      await transactionsRepo.markCompleted(transaction.id);
+
+      const description =
+        transaction.type === "subscription_payment" ? "Plan subscription" : `${transaction.coins} coin top-up`;
+      try {
+        await generateForTransaction(transaction, account, description);
+      } catch (err) {
+        log.error({ err, transactionId: transaction.id }, "invoice generation failed");
+      }
+      return;
+    }
+
+    await usersRepo.incrementCoinBalance(transaction.user_id!, transaction.coins);
     await transactionsRepo.markCompleted(transaction.id);
 
-    const user = await usersRepo.findById(transaction.user_id);
+    const user = await usersRepo.findById(transaction.user_id!);
     const confirmation = `✅ Payment received! ${transaction.coins} coins added to your balance.`;
     if (user?.wa_id) {
       await whatsappClient.sendText(env.WHATSAPP_PHONE_NUMBER_ID, user.wa_id, confirmation);

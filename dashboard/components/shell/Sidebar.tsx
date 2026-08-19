@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, ShieldCheck, User, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { performLogout } from "@/lib/logout";
 
 const NAV_ITEMS = [
   { href: "/home", label: "Home", icon: Home },
@@ -117,13 +118,14 @@ export function Sidebar({
                   </Link>
                 );
               })}
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={() => void performLogout()}
                 className="mt-1 flex items-center gap-2.5 rounded-lg border-t border-border px-2.5 pt-2.5 text-xs font-medium text-danger-text hover:bg-danger-bg"
               >
                 <LogOut className="size-3.5" strokeWidth={2} />
                 Logout
-              </Link>
+              </button>
             </div>
           )}
         </div>

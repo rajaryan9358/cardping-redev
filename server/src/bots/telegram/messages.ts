@@ -49,4 +49,9 @@ export const Copy = {
   coinBalance: (balance: number) => `You have <b>${balance}</b> coins remaining.`,
   paymentLink: (url: string) => `Click here to top up your account:\n${url}`,
   gmailConnected: "Gmail connected! You can now save AI-drafted follow-up emails as drafts.",
+  channelLinkConfirmed: "✅ This Telegram account is now connected to your CardPing dashboard login.",
+  channelLinkCodeInvalid: "That connection link has expired or was already used — generate a new one from the dashboard.",
+  channelLinkAlreadyLinked: "This Telegram account is already connected to a CardPing account.",
+  channelOnboardingPrompt: (url: string) =>
+    `👋 Welcome to CardPing! To start scanning cards, finish setting up your account here (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,
 };

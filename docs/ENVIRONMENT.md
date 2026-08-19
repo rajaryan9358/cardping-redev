@@ -57,7 +57,27 @@ depends on.
 | Variable | Required | Notes |
 |---|---|---|
 | `COINS_PER_CARD_SCAN` | No (default `1`) | Coins charged per card scan |
-| `COINS_STARTER_BALANCE` | No (default `5`) | Coins a brand-new user starts with |
+| `COINS_STARTER_BALANCE` | No (default `5`) | Coins a brand-new user starts with — also the onboarding trial grant on a new dashboard account (see below) |
+
+## dashboard/ auth (see docs/DASHBOARD_PLAN.md)
+
+Email/password login and Telegram channel-linking work with no extra setup. Google login and
+WhatsApp OTP login/channel-linking are each optional as a group — leave their variables blank and
+`GET /api/auth/config` reports them disabled, so the dashboard renders those buttons
+disabled-with-a-tooltip instead of a dead click.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `SESSION_COOKIE_NAME` | No (default `cardping_session`) | Distinct from admin/'s `cardping_admin_session` — the two apps' sessions never collide |
+| `SESSION_TTL_HOURS` | No (default `720`, i.e. 30 days) | |
+| `GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI` | For Google login | A **second** "Authorized redirect URI" on the same Google OAuth client used above for Gmail — must be distinct from `GOOGLE_OAUTH_REDIRECT_URI`, e.g. `https://your-domain/api/auth/google/callback` |
+| `WHATSAPP_LOGIN_OTP_TEMPLATE_NAME` | For WhatsApp OTP | Name of a Meta Business Manager **Authentication**-category template, approved for sending login codes |
+| `WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME` | No | Defaults to `WHATSAPP_LOGIN_OTP_TEMPLATE_NAME` — only set separately if Meta's review requires a distinct template for channel-linking vs. login |
+| `TELEGRAM_BOT_USERNAME` | For Telegram channel linking | The bot's public `@username`, without the `@` — used to build the `t.me/<bot>?start=<code>` deep link |
+| `DASHBOARD_BASE_URL` | No | Defaults to `PUBLIC_BASE_URL` — base URL for the "complete your account" link the bot sends a WhatsApp/Telegram user with no linked dashboard account yet (sent on every message until they link). Only needs overriding in a local setup where `dashboard/` runs on a different port with no shared reverse proxy |
+
+`dashboard/`'s own env (`dashboard/.env.example`) only needs `SERVER_API_BASE_URL` — everything
+else above lives in `server/.env` since `server/` is what actually calls Meta/Google/Cashfree.
 
 ## Google OAuth (Gmail follow-up drafts)
 

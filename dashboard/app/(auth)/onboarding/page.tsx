@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
+import { clientFetch } from "@/lib/clientFetch";
+import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 
 const STEPS = ["welcome", "coins", "connect"] as const;
 type Step = (typeof STEPS)[number];
@@ -22,6 +24,7 @@ function ProgressDots({ step }: { step: Step }) {
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>("welcome");
+  const { startingCoins } = useAuthConfig();
 
   return (
     <div className="w-full max-w-[510px] rounded-2xl border border-border bg-white p-10 shadow-soft">
@@ -56,7 +59,7 @@ export default function OnboardingPage() {
 
           <div className="flex flex-col items-center gap-1 rounded-xl bg-accent-soft px-16 py-8">
             <Coins className="size-7 text-accent" strokeWidth={1.75} />
-            <span className="text-4xl font-semibold text-ink">50</span>
+            <span className="text-4xl font-semibold text-ink">{startingCoins}</span>
             <span className="text-xs font-semibold uppercase tracking-wider text-accent-text">Free Coins</span>
           </div>
 
@@ -76,7 +79,7 @@ export default function OnboardingPage() {
               </span>
               <div>
                 <h3 className="text-sm font-semibold text-ink">Your Free Trial</h3>
-                <p className="text-xs text-muted">We&apos;ve loaded your account with 50 free coins to help you experience the full power of CardPing.</p>
+                <p className="text-xs text-muted">We&apos;ve loaded your account with {startingCoins} free coins to help you experience the full power of CardPing.</p>
               </div>
             </div>
           </div>
@@ -85,7 +88,16 @@ export default function OnboardingPage() {
             <button type="button" onClick={() => setStep("welcome")} className="text-sm text-muted hover:text-ink">
               Back
             </button>
-            <Button onClick={() => setStep("connect")}>Next</Button>
+            <Button
+              onClick={() => {
+                setStep("connect");
+                // Idempotent server-side — safe if the user backs up and
+                // forward again through the steps.
+                void clientFetch("/api/onboarding/complete", { method: "POST" });
+              }}
+            >
+              Next
+            </Button>
           </div>
         </div>
       )}

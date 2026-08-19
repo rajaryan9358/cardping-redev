@@ -1,12 +1,15 @@
 import { normalizeWhatsAppWebhook } from "../../integrations/whatsapp/normalize";
 import { usersRepo } from "../../db/repositories/users.repo";
+import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
+import { whatsappClient } from "../../integrations/whatsapp/client";
 import { childLogger } from "../../lib/logger";
+import * as channelOnboardingService from "../../services/channelOnboardingService";
 import { handleImage } from "./handlers/image";
 import { handleAudio } from "./handlers/audio";
 import { handleText } from "./handlers/text";
 import { handleButton } from "./handlers/button";
 import { tryContinuePendingState } from "./handlers/stateContinuation";
-import { sendMainMenu } from "./messages";
+import { sendMainMenu, Copy } from "./messages";
 
 const log = childLogger("wa-router");
 
@@ -23,6 +26,16 @@ export async function routeWhatsAppWebhook(body: unknown): Promise<void> {
     message.waMessageId,
     message.contactName,
   );
+
+  // Not yet linked to a dashboard account — hold off on everything else
+  // and push them toward signup instead. Applies to every message, not
+  // just the first, per product decision: no scanning until they link.
+  const link = await channelLinksRepo.findByUsersId(user.user_id);
+  if (!link) {
+    const onboardingUrl = await channelOnboardingService.createOnboardingLink("whatsapp", message.from);
+    await whatsappClient.sendText(message.phoneNumberId, message.from, Copy.channelOnboardingPrompt(onboardingUrl));
+    return;
+  }
 
   // A pending "wait for reply" state (set an event name, review an email
   // draft, ...) always takes priority over the normal menu dispatch, same

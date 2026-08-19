@@ -550,6 +550,231 @@ on conflict (id) do nothing;
 
 alter table public.broadcast_campaigns add column if not exists audience_filter text null;
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- dashboard/ real accounts — additive. See docs/DASHBOARD_PLAN.md for the
+-- full identity model. A dashboard login (`accounts`) is deliberately
+-- separate from a bot channel identity (`users`): `users.coin_balance` /
+-- `blocked_at` / `plan_id` / `plan_expires_at` stay exactly where they are
+-- and keep being authoritative for anyone who never links a channel — a
+-- brand-new phone number's very first scan happens before any account
+-- could possibly exist, so this is a permanent fallback, not a
+-- transitional one. `channel_links` is what resolves a `users` row to an
+-- `accounts` row once (and if) the person connects that channel from the
+-- dashboard.
+-- ─────────────────────────────────────────────────────────────────────────
+
+create table if not exists public.accounts (
+  id uuid not null default gen_random_uuid(),
+  email text null,
+  email_verified_at timestamptz null,
+  password_hash text null,
+  google_id text null,
+  mobile text null,
+  mobile_verified_at timestamptz null,
+  full_name text null,
+  avatar_url text null,
+  role text not null default 'user',
+  blocked_at timestamptz null,
+  onboarded_at timestamptz null,
+  coin_balance integer not null default 0,
+  plan_id text null references public.plans (id),
+  plan_expires_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint accounts_pkey primary key (id),
+  constraint accounts_role_check check (role in ('user', 'admin'))
+);
+
+-- Case-insensitive: two people racing to register the same email with
+-- different casing is a real bug otherwise. Partial (where ... is not
+-- null) since each login method looks up/creates independently — no
+-- cross-method merging in v1 (see DASHBOARD_PLAN.md).
+create unique index if not exists idx_accounts_email on public.accounts (lower(email)) where email is not null;
+create unique index if not exists idx_accounts_google_id on public.accounts (google_id) where google_id is not null;
+create unique index if not exists idx_accounts_mobile on public.accounts (mobile) where mobile is not null;
+
+drop trigger if exists accounts_set_updated_at on public.accounts;
+create trigger accounts_set_updated_at
+  before update on public.accounts
+  for each row execute function public.update_updated_at_column();
+
+-- ── channel_links ───────────────────────────────────────────────────────
+-- Unifies a dashboard login with one or more bot channel identities.
+-- Reuses broadcast_channel ('whatsapp'|'telegram') instead of adding a
+-- near-duplicate enum, matching this file's own convention (see
+-- notification_log above).
+create table if not exists public.channel_links (
+  id uuid not null default gen_random_uuid(),
+  account_id uuid not null,
+  users_id uuid not null,
+  channel public.broadcast_channel not null,
+  channel_identifier text not null,
+  verified_at timestamptz null,
+  created_at timestamptz not null default now(),
+  constraint channel_links_pkey primary key (id),
+  constraint channel_links_account_id_fkey foreign key (account_id) references public.accounts (id) on delete cascade,
+  constraint channel_links_users_id_fkey foreign key (users_id) references public.users (id) on delete cascade
+);
+
+create unique index if not exists idx_channel_links_channel_identifier on public.channel_links (channel, channel_identifier);
+-- One users row resolves to at most one account — the wallet migration's
+-- "resolve this bot user's account" queries depend on this being unique.
+create unique index if not exists idx_channel_links_users_id on public.channel_links (users_id);
+create index if not exists idx_channel_links_account_id on public.channel_links (account_id);
+
+-- ── sessions ────────────────────────────────────────────────────────────
+-- Mechanically identical to admin_sessions above, plus device_label/
+-- user_agent for the dashboard's Profile → Sessions screen.
+create table if not exists public.sessions (
+  id uuid not null default gen_random_uuid(),
+  account_id uuid not null,
+  device_label text null,
+  user_agent text null,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  constraint sessions_pkey primary key (id),
+  constraint sessions_account_id_fkey foreign key (account_id) references public.accounts (id) on delete cascade
+);
+
+create index if not exists idx_sessions_account_id on public.sessions using btree (account_id);
+
+-- ── otp_codes ───────────────────────────────────────────────────────────
+-- One table, `purpose` distinguishes a login OTP from a WhatsApp-channel-
+-- link OTP (same delivery mechanism, different consequence on verify).
+-- code_hash is sha256, not bcrypt: OTPs are short-lived/rate-limited, so
+-- bcrypt's deliberate slowness is wasted cost paid on every verify
+-- attempt — bcrypt stays reserved for accounts.password_hash, where
+-- slow-by-design is the point.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'otp_purpose') then
+    create type public.otp_purpose as enum ('login', 'channel_link');
+  end if;
+end $$;
+
+-- channel_onboarding: the link sent to a bot user with no channel_links row
+-- yet, pointing them at dashboard signup (see channelOnboardingService.ts).
+alter type public.otp_purpose add value if not exists 'channel_onboarding';
+
+create table if not exists public.otp_codes (
+  id uuid not null default gen_random_uuid(),
+  purpose public.otp_purpose not null,
+  target text not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts integer not null default 0,
+  consumed_at timestamptz null,
+  created_at timestamptz not null default now(),
+  constraint otp_codes_pkey primary key (id)
+);
+
+create index if not exists idx_otp_codes_target_purpose on public.otp_codes using btree (target, purpose, consumed_at);
+
+-- ── invoices ────────────────────────────────────────────────────────────
+create table if not exists public.invoices (
+  id uuid not null default gen_random_uuid(),
+  account_id uuid not null,
+  transaction_id uuid not null,
+  invoice_number text not null,
+  buyer_gstin text null,
+  amount numeric not null,
+  tax_amount numeric not null default 0,
+  pdf_path text null,
+  created_at timestamptz not null default now(),
+  constraint invoices_pkey primary key (id),
+  constraint invoices_account_id_fkey foreign key (account_id) references public.accounts (id) on delete cascade,
+  constraint invoices_transaction_id_fkey foreign key (transaction_id) references public.transactions (id) on delete cascade,
+  constraint invoices_invoice_number_key unique (invoice_number)
+);
+
+create index if not exists idx_invoices_account_id on public.invoices using btree (account_id);
+
+-- Private (unlike visiting-cards/voice-notes above) — invoices carry
+-- billing PII, served via createSignedUrl() rather than a public URL.
+insert into storage.buckets (id, name, public)
+values ('invoices', 'invoices', false)
+on conflict (id) do nothing;
+
+-- ── transactions.account_id ─────────────────────────────────────────────
+-- Coexists with the existing user_id: user_id is "which channel identity
+-- triggered this," account_id is "whose wallet this affected." Either can
+-- be null depending on the row's origin (a legacy bot-only card scan sets
+-- only user_id; a dashboard billing event sets only account_id).
+alter table public.transactions add column if not exists account_id uuid null references public.accounts (id);
+create index if not exists idx_transactions_account_id on public.transactions using btree (account_id);
+
+-- ── visiting_cards: archive + tags ──────────────────────────────────────
+alter table public.visiting_cards add column if not exists archived boolean not null default false;
+alter table public.visiting_cards add column if not exists tags text[] not null default '{}';
+create index if not exists idx_cards_tags on public.visiting_cards using gin (tags);
+create index if not exists idx_cards_archived on public.visiting_cards using btree (archived);
+
+-- ── events: location/date/thumbnail ──────────────────────────────────────
+alter table public.events add column if not exists location text null;
+alter table public.events add column if not exists event_date date null;
+alter table public.events add column if not exists thumbnail_path text null;
+alter table public.events add column if not exists thumbnail_public_url text null;
+
+insert into storage.buckets (id, name, public)
+values ('event-thumbnails', 'event-thumbnails', true)
+on conflict (id) do nothing;
+
+-- ── account wallet RPCs ─────────────────────────────────────────────────
+-- Same floor-at-zero shape as decrement_coin_balance/increment_coin_balance/
+-- admin_adjust_coin_balance above, targeting accounts instead of users —
+-- used once a bot channel identity is linked (see walletService.ts).
+create or replace function public.account_decrement_coin_balance(account_uuid uuid)
+returns public.accounts
+language plpgsql
+as $$
+declare
+  updated_account public.accounts;
+begin
+  update public.accounts
+  set coin_balance = greatest(coin_balance - 1, 0)
+  where id = account_uuid
+  returning * into updated_account;
+
+  return updated_account;
+end;
+$$;
+
+create or replace function public.account_increment_coin_balance(account_uuid uuid, amount integer)
+returns public.accounts
+language plpgsql
+as $$
+declare
+  updated_account public.accounts;
+begin
+  update public.accounts
+  set coin_balance = coin_balance + amount
+  where id = account_uuid
+  returning * into updated_account;
+
+  return updated_account;
+end;
+$$;
+
+create or replace function public.admin_adjust_account_coin_balance(account_uuid uuid, delta integer, reason text default null)
+returns public.accounts
+language plpgsql
+as $$
+declare
+  updated_account public.accounts;
+begin
+  update public.accounts
+  set coin_balance = greatest(coin_balance + delta, 0)
+  where id = account_uuid
+  returning * into updated_account;
+
+  insert into public.transactions (account_id, type, coins)
+  values (account_uuid, 'admin_adjustment', delta);
+
+  return updated_account;
+end;
+$$;
+
 -- ── public.user_with_event (single definition) ──────────────────────────
 -- Every column any feature block above added to `users` gets appended
 -- here, in the order it was added. This has to be the ONLY
@@ -586,8 +811,20 @@ select
   u.marketing_opt_in,
   u.plan_id,
   u.plan_expires_at,
-  u.last_login
+  u.last_login,
+  -- Resolved through channel_links/accounts when this channel identity has
+  -- been linked to a dashboard login, falling back to the legacy columns
+  -- above otherwise — see the "dashboard/ real accounts" block for why the
+  -- legacy columns are a permanent fallback, not transitional.
+  cl.account_id,
+  a.email as linked_account_email,
+  coalesce(a.coin_balance, u.coin_balance) as effective_coin_balance,
+  coalesce(a.blocked_at, u.blocked_at) as effective_blocked_at,
+  coalesce(a.plan_id, u.plan_id) as effective_plan_id,
+  coalesce(a.plan_expires_at, u.plan_expires_at) as effective_plan_expires_at
 from
   public.users u
   left join public.events e on e.id = u.active_event_id
-  left join public.visiting_cards vc on vc.id = u.active_visiting_card_id;
+  left join public.visiting_cards vc on vc.id = u.active_visiting_card_id
+  left join public.channel_links cl on cl.users_id = u.id
+  left join public.accounts a on a.id = cl.account_id;

@@ -129,6 +129,14 @@ async function incrementCoinBalance(userId: string, amount: number): Promise<Use
   return data as User;
 }
 
+/** Direct set, not the increment/decrement RPCs — used once, by
+ * walletService's merge-on-link transfer, to zero the legacy balance
+ * after it's been moved to the newly-linked account. */
+async function setCoinBalance(userId: string, balance: number): Promise<void> {
+  const { error } = await supabase.from("users").update({ coin_balance: balance }).eq("id", userId);
+  if (error) throw error;
+}
+
 export const usersRepo = {
   findByChannelId,
   findById,
@@ -139,4 +147,5 @@ export const usersRepo = {
   setWriteEmail,
   decrementCoinBalance,
   incrementCoinBalance,
+  setCoinBalance,
 };

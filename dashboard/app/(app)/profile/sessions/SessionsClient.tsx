@@ -6,17 +6,33 @@ import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TableCard, TableHeaderRow, Th, Td, Tr } from "@/components/ui/Table";
 import { Session } from "@/lib/types";
+import { clientFetch } from "@/lib/clientFetch";
+import { performLogout } from "@/lib/logout";
 
 type PendingLogout = Session | "all" | null;
 
 export function SessionsClient({ sessions: initialSessions }: { sessions: Session[] }) {
   const [sessions, setSessions] = useState(initialSessions);
   const [pendingLogout, setPendingLogout] = useState<PendingLogout>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function confirmLogout() {
-    if (pendingLogout === "all") setSessions((prev) => prev.filter((s) => s.isCurrent));
-    else if (pendingLogout) setSessions((prev) => prev.filter((s) => s.id !== pendingLogout.id));
-    setPendingLogout(null);
+  async function confirmLogout() {
+    setSubmitting(true);
+    try {
+      if (pendingLogout === "all") {
+        // Also invalidates the current session, so this ends in a real
+        // logout+redirect rather than just refreshing the list.
+        await performLogout();
+        return;
+      }
+      if (pendingLogout) {
+        await clientFetch(`/api/auth/sessions/${pendingLogout.id}`, { method: "DELETE" });
+        setSessions((prev) => prev.filter((s) => s.id !== pendingLogout.id));
+      }
+    } finally {
+      setSubmitting(false);
+      setPendingLogout(null);
+    }
   }
 
   return (
@@ -46,7 +62,7 @@ export function SessionsClient({ sessions: initialSessions }: { sessions: Sessio
                 {session.isCurrent && <Badge tone="success">This device</Badge>}
               </span>
             </Td>
-            <Td>{session.location}</Td>
+            <Td>{session.location ?? "—"}</Td>
             <Td>{new Date(session.lastActiveAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</Td>
             <Td align="right">
               {!session.isCurrent && (

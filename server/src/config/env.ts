@@ -40,10 +40,37 @@ const envSchema = z.object({
   CASHFREE_RETURN_URL: z.string().optional().default(""),
   COIN_TOPUP_AMOUNT_INR: z.coerce.number().positive().default(1000),
   COIN_TOPUP_COINS: z.coerce.number().int().positive().default(50),
+
+  // dashboard/ auth — see docs/DASHBOARD_PLAN.md.
+  SESSION_COOKIE_NAME: z.string().default("cardping_session"),
+  SESSION_TTL_HOURS: z.coerce.number().positive().default(24 * 30),
+
+  // Separate OAuth client callback from GOOGLE_OAUTH_REDIRECT_URI above,
+  // which is the unrelated Gmail-follow-up-draft feature's callback — same
+  // Google Cloud client, different scope/redirect, must not collide.
+  GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI: z.string().optional().default(""),
+
+  // Unset until a Meta Business Manager Authentication template is created
+  // and approved — until then, WhatsApp OTP login/channel-link routes
+  // return a clear "not configured" error instead of calling Meta's API.
+  WHATSAPP_LOGIN_OTP_TEMPLATE_NAME: z.string().optional().default(""),
+  WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME: z.string().optional().default(""),
+
+  // Needed to build the t.me/<bot>?start=<code> channel-link deep link.
+  TELEGRAM_BOT_USERNAME: z.string().optional().default(""),
+
+  // Base URL for the "complete your account" link the bot sends an unlinked
+  // channel identity — see channelOnboardingService.ts. Falls back to
+  // PUBLIC_BASE_URL since dashboard/ and server/ share one origin in
+  // production; only needs overriding in a local setup where they run on
+  // separate ports with no shared reverse proxy.
+  DASHBOARD_BASE_URL: z.string().optional().default(""),
 });
 
 type Env = z.infer<typeof envSchema> & {
   GOOGLE_OAUTH_REDIRECT_URI: string;
+  WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME: string;
+  DASHBOARD_BASE_URL: string;
 };
 
 function loadEnv(): Env {
@@ -60,6 +87,12 @@ function loadEnv(): Env {
     ...data,
     GOOGLE_OAUTH_REDIRECT_URI:
       data.GOOGLE_OAUTH_REDIRECT_URI || `${data.PUBLIC_BASE_URL}/oauth/google/callback`,
+    // One Authentication template can usually serve both login and
+    // channel-link OTPs — only set the second env var if Meta's review
+    // ends up requiring a distinct template per use case.
+    WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME:
+      data.WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME || data.WHATSAPP_LOGIN_OTP_TEMPLATE_NAME,
+    DASHBOARD_BASE_URL: data.DASHBOARD_BASE_URL || data.PUBLIC_BASE_URL,
   };
 }
 
@@ -72,3 +105,14 @@ export const isGmailFollowUpEnabled = Boolean(
 export const isCashfreeEnabled = Boolean(
   env.CASHFREE_CLIENT_ID && env.CASHFREE_CLIENT_SECRET,
 );
+
+// Gates for the two dashboard login methods that need external setup this
+// session can't complete itself (a Google Cloud redirect URI, a Meta
+// Business Manager-approved Authentication template) — see
+// docs/DASHBOARD_PLAN.md. Routes check these before ever calling out to
+// Google/Meta, returning a clear "not configured" error instead.
+export const isGoogleDashboardLoginEnabled = Boolean(
+  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI,
+);
+
+export const isWhatsappOtpLoginEnabled = Boolean(env.WHATSAPP_LOGIN_OTP_TEMPLATE_NAME);

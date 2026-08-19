@@ -25,6 +25,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { cn } from "@/lib/cn";
 import { EventRecord, VisitingCard } from "@/lib/types";
+import { clientFetch } from "@/lib/clientFetch";
 
 const CHANNEL_ICON: Record<VisitingCard["uploadedBy"], string> = {
   whatsapp: "/icons/channel-whatsapp.svg",
@@ -154,26 +155,33 @@ export function ScansExplorer({
     }
   }
 
-  function confirmDelete() {
+async function confirmDelete() {
     if (deleteTarget === "bulk") {
+      const ids = Array.from(selected);
+      await clientFetch("/api/cards/bulk", { method: "DELETE", body: JSON.stringify({ ids }) });
       setCards((prev) => prev.filter((c) => !selected.has(c.id)));
       setSelected(new Set());
     } else if (deleteTarget) {
+      await clientFetch(`/api/cards/${deleteTarget.id}`, { method: "DELETE" });
       setCards((prev) => prev.filter((c) => c.id !== deleteTarget.id));
     }
     setDeleteTarget(null);
   }
 
-  function applyBulkTags() {
+  async function applyBulkTags() {
+    const ids = Array.from(selected);
+    await clientFetch("/api/cards/bulk", { method: "PATCH", body: JSON.stringify({ ids, addTags: bulkTags }) });
     setCards((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, tags: Array.from(new Set([...c.tags, ...bulkTags])) } : c)));
     setBulkTags([]);
     setTagModalOpen(false);
     setSelected(new Set());
   }
 
-  function applyBulkMove() {
+  async function applyBulkMove() {
     const event = events.find((e) => e.id === moveEventId);
     if (!event) return;
+    const ids = Array.from(selected);
+    await clientFetch("/api/cards/bulk", { method: "PATCH", body: JSON.stringify({ ids, eventId: event.id }) });
     setCards((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, eventId: event.id, eventName: event.name } : c)));
     setMoveModalOpen(false);
     setMoveEventId("");

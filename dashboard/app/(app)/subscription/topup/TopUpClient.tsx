@@ -2,27 +2,44 @@
 
 import { Coins } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/cn";
 import { Account } from "@/lib/types";
 import { TopUpPackage } from "@/lib/mock/topups";
+import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  billing_not_configured: "Payments aren't set up yet — check back soon.",
+  package_not_found: "That package is no longer available.",
+};
+
+function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? "Couldn't start checkout. Please try again.";
+}
 
 export function TopUpClient({ account, topUps }: { account: Account; topUps: TopUpPackage[] }) {
-  const router = useRouter();
   const coinBalance = account.coinBalance;
   const [pendingTopUp, setPendingTopUp] = useState<TopUpPackage | null>(null);
   const [paying, setPaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function confirmTopUp() {
+  async function confirmTopUp() {
     if (!pendingTopUp) return;
     setPaying(true);
-    const newBalance = coinBalance + pendingTopUp.coins;
-    setTimeout(() => {
-      router.push(`/subscription/topup/success?coins=${pendingTopUp.coins}&price=${pendingTopUp.priceInr}&balance=${newBalance}`);
-    }, 900);
+    setError(null);
+    try {
+      const res = await clientFetch("/api/billing/coins/topup", {
+        method: "POST",
+        body: JSON.stringify({ topupPackageId: pendingTopUp.id }),
+      });
+      const { paymentLinkUrl } = await parseJsonOrThrow<{ paymentLinkUrl: string }>(res);
+      window.location.href = paymentLinkUrl;
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+      setPaying(false);
+    }
   }
 
   return (
@@ -86,10 +103,13 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
         }
       >
         {pendingTopUp && (
-          <p className="text-sm text-muted">
-            You&apos;ll be charged ₹{pendingTopUp.priceInr.toLocaleString()} and {pendingTopUp.coins.toLocaleString()} coins will be added to
-            your balance immediately.
-          </p>
+          <div className="flex flex-col gap-3">
+            {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
+            <p className="text-sm text-muted">
+              You&apos;ll be redirected to a secure payment page to pay ₹{pendingTopUp.priceInr.toLocaleString()}. Once
+              paid, {pendingTopUp.coins.toLocaleString()} coins will be added to your balance.
+            </p>
+          </div>
         )}
       </Modal>
     </div>

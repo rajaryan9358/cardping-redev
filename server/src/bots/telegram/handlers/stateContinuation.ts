@@ -40,7 +40,7 @@ export async function tryContinuePendingState(
     case "awaiting_account_settings_choice": {
       if (msg.callbackData === Ids.accountCheckCredit) {
         await usersRepo.setState(user.user_id, "idle");
-        await telegramClient.sendMessage(chatId, Copy.coinBalance(user.coin_balance));
+        await telegramClient.sendMessage(chatId, Copy.coinBalance(user.effective_coin_balance));
         return true;
       }
       if (msg.callbackData === Ids.accountConnectGmail) {

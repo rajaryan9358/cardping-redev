@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { LogOut, Settings, User } from "lucide-react";
+import { performLogout } from "@/lib/logout";
 
 export function AvatarMenu({ name, email, avatarUrl }: { name: string; email: string | null; avatarUrl: string | null }) {
   const [open, setOpen] = useState(false);
@@ -35,9 +36,13 @@ export function AvatarMenu({ name, email, avatarUrl }: { name: string; email: st
               <Link href="/subscription" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-2 hover:bg-active-bg hover:text-ink">
                 <Settings className="size-4" /> Billing &amp; Plan
               </Link>
-              <Link href="/login" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-danger-text hover:bg-danger-bg">
+              <button
+                type="button"
+                onClick={() => void performLogout()}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-danger-text hover:bg-danger-bg"
+              >
                 <LogOut className="size-4" /> Log out
-              </Link>
+              </button>
             </div>
           </div>
         </>

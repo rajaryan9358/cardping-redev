@@ -3,34 +3,54 @@
 import { Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { cn } from "@/lib/cn";
-import { EventRecord } from "@/lib/types";
+import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 
-type EventType = "conference" | "networking" | "trade-show";
-const EVENT_TYPES: { id: EventType; label: string }[] = [
-  { id: "conference", label: "Conference" },
-  { id: "networking", label: "Networking" },
-  { id: "trade-show", label: "Trade Show" },
-];
+const ERROR_MESSAGES: Record<string, string> = {
+  no_channel_linked: "Connect WhatsApp or Telegram first — events organize scans, which only come in through a linked channel.",
+};
 
-const EVENT_STATUSES: { id: EventRecord["status"]; label: string }[] = [
-  { id: "upcoming", label: "Upcoming" },
-  { id: "active", label: "Active" },
-  { id: "draft", label: "Draft" },
-  { id: "past", label: "Past" },
-];
+function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? "Couldn't create the event. Please try again.";
+}
 
 export default function NewEventPage() {
   const router = useRouter();
-  const [eventType, setEventType] = useState<EventType>("conference");
-  const [status, setStatus] = useState<EventRecord["status"]>("upcoming");
   const [thumbnailName, setThumbnailName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    router.push("/events");
+    setError(null);
+    const form = new FormData(e.currentTarget);
+    const name = form.get("name") as string;
+    const location = (form.get("location") as string) || null;
+    const eventDate = (form.get("eventDate") as string) || null;
+
+    setSubmitting(true);
+    try {
+      const res = await clientFetch("/api/events", {
+        method: "POST",
+        body: JSON.stringify({ name, location, eventDate }),
+      });
+      const { event } = await parseJsonOrThrow<{ event: { id: string } }>(res);
+
+      const thumbnailFile = fileInputRef.current?.files?.[0];
+      if (thumbnailFile) {
+        const uploadForm = new FormData();
+        uploadForm.append("thumbnail", thumbnailFile);
+        await fetch(`/api/events/${event.id}/thumbnail`, { method: "POST", credentials: "include", body: uploadForm });
+      }
+
+      router.push("/events");
+    } catch (err) {
+      setError(errorMessage((err as Error).message));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -41,10 +61,13 @@ export default function NewEventPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-surface p-8 shadow-soft">
+        {error && <p className="mb-6 rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
+
         <div className="flex flex-col gap-2 pb-6">
           <label className="text-xs font-medium text-muted">Event Thumbnail</label>
           <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center hover:border-accent hover:bg-accent-soft/30">
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*"
               className="hidden"
@@ -61,66 +84,31 @@ export default function NewEventPage() {
             <label className="text-xs font-medium text-muted">
               Event Name <span className="text-danger-text">*</span>
             </label>
-            <input required placeholder="e.g., Annual Tech Summit" className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20" />
+            <input
+              name="name"
+              required
+              placeholder="e.g., Annual Tech Summit"
+              className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted">Location / Venue</label>
-            <input placeholder="e.g., Moscone Center" className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20" />
+            <input
+              name="location"
+              placeholder="e.g., Moscone Center"
+              className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-6 pb-6">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted">
-              From Date <span className="text-danger-text">*</span>
-            </label>
-            <input required type="date" className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted">To Date (Optional)</label>
-            <input type="date" className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6 pb-6">
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-muted">Event Type</label>
-            <div className="flex gap-6">
-              {EVENT_TYPES.map((type) => (
-                <label key={type.id} className="flex items-center gap-2 text-sm text-ink">
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center rounded-full border",
-                      eventType === type.id ? "border-accent" : "border-border",
-                    )}
-                  >
-                    {eventType === type.id && <span className="size-2 rounded-full bg-accent" />}
-                  </span>
-                  <input
-                    type="radio"
-                    name="eventType"
-                    className="hidden"
-                    checked={eventType === type.id}
-                    onChange={() => setEventType(type.id)}
-                  />
-                  {type.label}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as EventRecord["status"])}
+            <label className="text-xs font-medium text-muted">Date</label>
+            <input
+              name="eventDate"
+              type="date"
               className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            >
-              {EVENT_STATUSES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
 
@@ -128,7 +116,7 @@ export default function NewEventPage() {
           <Link href="/events">
             <Button type="button" variant="secondary">Cancel</Button>
           </Link>
-          <Button type="submit">Create Event</Button>
+          <Button type="submit" loading={submitting}>Create Event</Button>
         </div>
       </form>
     </div>

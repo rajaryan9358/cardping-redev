@@ -1,12 +1,15 @@
 import { normalizeTelegramUpdate } from "../../integrations/telegram/normalize";
 import { telegramClient } from "../../integrations/telegram/client";
 import { usersRepo } from "../../db/repositories/users.repo";
+import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
 import { childLogger } from "../../lib/logger";
+import * as channelOnboardingService from "../../services/channelOnboardingService";
 import { handlePhoto } from "./handlers/photo";
 import { handleVoice } from "./handlers/voice";
 import { handleText } from "./handlers/text";
 import { handleCallback } from "./handlers/callback";
 import { tryContinuePendingState } from "./handlers/stateContinuation";
+import { Copy } from "./messages";
 
 const log = childLogger("tg-router");
 
@@ -28,6 +31,25 @@ export async function routeTelegramUpdate(update: unknown): Promise<void> {
   // loading spinner on it, regardless of how long the rest takes.
   if (message.callbackQueryId) {
     await telegramClient.answerCallbackQuery(message.callbackQueryId);
+  }
+
+  // /start <code> is how dashboard-initiated Telegram linking (Profile →
+  // Channels, e.g. linking Telegram as a second channel) always arrives —
+  // it must always reach handleText's resolveTelegramLinkCode below, even
+  // from a brand-new, still-unlinked Telegram identity. Everything else
+  // from an unlinked identity gets held for the gate right after.
+  const isLinkCodeRedemption = message.type === "text" && /^\/start\s+\S+$/.test(message.text?.trim() ?? "");
+
+  if (!isLinkCodeRedemption) {
+    // Not yet linked to a dashboard account — hold off on everything else
+    // and push them toward signup instead. Applies to every message, not
+    // just the first, per product decision: no scanning until they link.
+    const link = await channelLinksRepo.findByUsersId(user.user_id);
+    if (!link) {
+      const onboardingUrl = await channelOnboardingService.createOnboardingLink("telegram", user.telegram_id ?? message.telegramUserId);
+      await telegramClient.sendMessage(message.chatId, Copy.channelOnboardingPrompt(onboardingUrl));
+      return;
+    }
   }
 
   if (user.user_state && user.user_state !== "idle") {

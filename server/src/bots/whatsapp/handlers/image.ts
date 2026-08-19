@@ -15,13 +15,13 @@ const log = childLogger("wa-image-handler");
 export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWithEvent): Promise<void> {
   const { phoneNumberId, from } = msg;
 
-  if (user.blocked_at) {
+  if (user.effective_blocked_at) {
     await whatsappClient.sendText(phoneNumberId, from, Copy.accountBlocked);
     return;
   }
 
-  if (!hasEnoughCoinsForScan(user.coin_balance)) {
-    await whatsappClient.sendText(phoneNumberId, from, Copy.insufficientCoins(user.coin_balance));
+  if (!hasEnoughCoinsForScan(user.effective_coin_balance)) {
+    await whatsappClient.sendText(phoneNumberId, from, Copy.insufficientCoins(user.effective_coin_balance));
     return;
   }
 
@@ -50,7 +50,7 @@ export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWith
   await Promise.all([
     linkCardToInboundMessage(card.id, msg.waMessageId),
     usersRepo.setActiveVisitingCard(user.user_id, card.id),
-    chargeForCardScan(user.user_id),
+    chargeForCardScan(user.user_id, user.account_id),
   ]);
 
   await whatsappClient.sendText(phoneNumberId, from, formatCardSummary(extracted), {

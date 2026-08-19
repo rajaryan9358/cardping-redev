@@ -27,4 +27,16 @@ async function uploadVoiceNote(userId: string, cardId: string, buffer: Buffer): 
   return { path, publicUrl: data.publicUrl };
 }
 
-export const supabaseStorage = { uploadCardImage, uploadVoiceNote };
+async function uploadEventThumbnail(eventId: string, buffer: Buffer, contentType: string): Promise<{ path: string; publicUrl: string }> {
+  const ext = contentType === "image/png" ? "png" : "jpg";
+  const path = `${eventId}/${timestampSlug()}.${ext}`;
+  const { error } = await supabase.storage
+    .from("event-thumbnails")
+    .upload(path, buffer, { contentType, upsert: true });
+  if (error) throw error;
+
+  const { data } = await supabase.storage.from("event-thumbnails").getPublicUrl(path);
+  return { path, publicUrl: data.publicUrl };
+}
+
+export const supabaseStorage = { uploadCardImage, uploadVoiceNote, uploadEventThumbnail };

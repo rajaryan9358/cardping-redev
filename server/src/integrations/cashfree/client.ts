@@ -17,27 +17,30 @@ export interface CreatePaymentLinkResult {
   linkUrl: string;
 }
 
-/** Creates a one-time Cashfree Payment Link for a coin top-up. `notifyUrl`
- * is where Cashfree POSTs the payment status webhook (see
- * routes/cashfreeWebhook.route.ts) — Cashfree does not call back to a
- * dynamic `return_url`, only to whatever static webhook URL is configured
- * for the merchant account, so `notifyUrl` here is informational/legacy
- * from the original flow; configure the real one in the Cashfree dashboard. */
+/** Creates a one-time Cashfree Payment Link. `notifyUrl` is where Cashfree
+ * POSTs the payment status webhook (see routes/cashfreeWebhook.route.ts)
+ * — Cashfree does not call back to a dynamic `return_url`, only to
+ * whatever static webhook URL is configured for the merchant account, so
+ * `notifyUrl` here is informational/legacy from the original flow;
+ * configure the real one in the Cashfree dashboard. */
 async function createPaymentLink(input: {
+  amountInr: number;
+  purpose: string;
   phoneNumber: string;
   notifyUrl: string;
+  customerEmail?: string;
 }): Promise<CreatePaymentLinkResult> {
   const linkId = crypto.randomUUID();
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   const { data } = await cashfree.post("/links", {
     link_id: linkId,
-    link_amount: env.COIN_TOPUP_AMOUNT_INR,
+    link_amount: input.amountInr,
     link_currency: "INR",
-    link_purpose: "CardPing coin top-up",
+    link_purpose: input.purpose,
     customer_details: {
       customer_name: "",
-      customer_email: "",
+      customer_email: input.customerEmail ?? "",
       customer_phone: input.phoneNumber.replace(/\D/g, "").slice(-10),
     },
     link_expiry_time: expiry,

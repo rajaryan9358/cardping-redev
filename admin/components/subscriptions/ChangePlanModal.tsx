@@ -11,11 +11,16 @@ export function ChangePlanModal({
   userName,
   plans,
   onClose,
+  onConfirm,
 }: {
   userId: string | null;
   userName: string;
   plans: Plan[];
   onClose: () => void;
+  /** Defaults to the channel-identity action (setUserPlanAction) — pass
+   * this to target an account directly instead (see
+   * SubscribedAccountsTable, for accounts with no linked channel). */
+  onConfirm?: (id: string, planId: string) => Promise<void>;
 }) {
   const [selectedPlanId, setSelectedPlanId] = useState(plans[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
@@ -28,7 +33,7 @@ export function ChangePlanModal({
     setSaving(true);
     setError(null);
     try {
-      await setUserPlanAction(userId!, selectedPlanId);
+      await (onConfirm ?? setUserPlanAction)(userId!, selectedPlanId);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");

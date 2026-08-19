@@ -16,23 +16,23 @@ export function UserDetailActions({ user }: { user: AdminUserRow }) {
       <Button variant="secondary" onClick={() => setCoinsOpen(true)}>
         Adjust coins
       </Button>
-      <Button variant={user.blocked_at ? "secondary" : "destructive"} onClick={() => setConfirmOpen(true)}>
-        {user.blocked_at ? "Unblock" : "Block"}
+      <Button variant={user.effective_blocked_at ? "secondary" : "destructive"} onClick={() => setConfirmOpen(true)}>
+        {user.effective_blocked_at ? "Unblock" : "Block"}
       </Button>
 
       <ConfirmDialog
         open={confirmOpen}
-        title={user.blocked_at ? "Unblock this user?" : "Block this user?"}
+        title={user.effective_blocked_at ? "Unblock this user?" : "Block this user?"}
         description={
-          user.blocked_at
+          user.effective_blocked_at
             ? `${user.full_name || "This user"} will be able to scan cards again.`
             : `${user.full_name || "This user"} will no longer be able to scan cards on WhatsApp or Telegram.`
         }
-        confirmLabel={user.blocked_at ? "Unblock" : "Block"}
-        danger={!user.blocked_at}
+        confirmLabel={user.effective_blocked_at ? "Unblock" : "Block"}
+        danger={!user.effective_blocked_at}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={async () => {
-          await setUserBlockedAction(user.user_id, !user.blocked_at);
+          await setUserBlockedAction(user.user_id, !user.effective_blocked_at);
           setConfirmOpen(false);
         }}
       />

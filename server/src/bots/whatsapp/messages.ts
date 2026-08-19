@@ -50,4 +50,6 @@ export const Copy = {
   coinBalance: (balance: number) => `You have *${balance}* coins remaining.`,
   paymentLink: (url: string) => `Click here to top up your account:\n${url}`,
   gmailConnected: "Gmail connected! You can now save AI-drafted follow-up emails as drafts.",
+  channelOnboardingPrompt: (url: string) =>
+    `👋 Welcome to CardPing! To start scanning cards, finish setting up your account here (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,
 };
