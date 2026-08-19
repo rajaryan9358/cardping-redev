@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getCurrentAccount } from "@/lib/data/account";
 import { getPlans } from "@/lib/data/billing";
 import { QuickSubscribeClient } from "./QuickSubscribeClient";
@@ -9,5 +10,9 @@ import { QuickSubscribeClient } from "./QuickSubscribeClient";
 // picker.
 export default async function QuickSubscribePage() {
   const [account, plans] = await Promise.all([getCurrentAccount(), getPlans()]);
-  return <QuickSubscribeClient account={account} plans={plans} />;
+  return (
+    <Suspense>
+      <QuickSubscribeClient account={account} plans={plans} />
+    </Suspense>
+  );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getCurrentAccount } from "@/lib/data/account";
 import { getTopUpPackages } from "@/lib/data/billing";
 import { QuickTopUpClient } from "./QuickTopUpClient";
@@ -8,5 +9,9 @@ import { QuickTopUpClient } from "./QuickTopUpClient";
 // deliberately without a link back into it: just the purchase flow.
 export default async function QuickTopUpPage() {
   const [account, topUps] = await Promise.all([getCurrentAccount(), getTopUpPackages()]);
-  return <QuickTopUpClient account={account} topUps={topUps} />;
+  return (
+    <Suspense>
+      <QuickTopUpClient account={account} topUps={topUps} />
+    </Suspense>
+  );
 }

@@ -48,6 +48,7 @@ export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWith
   }
 
   const { buffer, mimeType } = await whatsappClient.downloadMediaById(msg.mediaId);
+  await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
@@ -115,6 +116,32 @@ export async function resumeScanAfterEventSet(phoneNumberId: string, from: strin
   const user = await usersRepo.findById(userId);
   if (!user || !user.pending_front_media_id) return;
 
+  // Both images are already held (the back photo arrived while the event
+  // had expired, see stateContinuation.ts's awaiting_back_photo case) —
+  // finalize directly instead of asking for a back photo we already have.
+  if (user.pending_back_media_id) {
+    const [front, back] = await Promise.all([
+      whatsappClient.downloadMediaById(user.pending_front_media_id),
+      whatsappClient.downloadMediaById(user.pending_back_media_id),
+    ]);
+    await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
+    const { card, extracted } = await finalizeScan({
+      userId: user.user_id,
+      accountId: user.account_id,
+      eventId: user.active_event_id!,
+      channel: "whatsapp",
+      messageId: user.pending_front_media_id,
+      frontImageId: user.pending_front_media_id,
+      frontImageBuffer: front.buffer,
+      frontMimeType: front.mimeType,
+      backImageId: user.pending_back_media_id,
+      backImageBuffer: back.buffer,
+      backMimeType: back.mimeType,
+    });
+    await sendScanResult(phoneNumberId, from, null, card, extracted, user);
+    return;
+  }
+
   if (decideScanAction(user) === "ask_back_photo") {
     await usersRepo.setState(userId, "awaiting_back_photo");
     await whatsappClient.sendText(phoneNumberId, from, Copy.askForBackPhoto);
@@ -122,6 +149,7 @@ export async function resumeScanAfterEventSet(phoneNumberId: string, from: strin
   }
 
   const { buffer, mimeType } = await whatsappClient.downloadMediaById(user.pending_front_media_id);
+  await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
@@ -138,10 +166,10 @@ export async function resumeScanAfterEventSet(phoneNumberId: string, from: strin
 
 async function sendOutOfCoins(phoneNumberId: string, from: string, user: UserWithEvent): Promise<void> {
   const status = await getSubscriptionStatus(user);
-  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup");
+  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup?returnTo=whatsapp");
 
   if (status.tone === "none" || status.tone === "expired") {
-    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe");
+    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe?returnTo=whatsapp");
     await whatsappClient.sendText(phoneNumberId, from, Copy.outOfCoinsNoPlan(subscribeUrl, topUpUrl));
     return;
   }

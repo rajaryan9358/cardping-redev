@@ -29,6 +29,7 @@ async function createPaymentLink(input: {
   phoneNumber: string;
   notifyUrl: string;
   customerEmail?: string;
+  returnUrl?: string;
 }): Promise<CreatePaymentLinkResult> {
   const linkId = crypto.randomUUID();
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -45,7 +46,7 @@ async function createPaymentLink(input: {
     },
     link_expiry_time: expiry,
     link_notify: { send_email: false, send_sms: true },
-    link_meta: { notify_url: input.notifyUrl, return_url: env.CASHFREE_RETURN_URL },
+    link_meta: { notify_url: input.notifyUrl, return_url: input.returnUrl ?? env.CASHFREE_RETURN_URL },
   });
 
   return { linkId, linkUrl: data.link_url };

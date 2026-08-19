@@ -73,7 +73,7 @@ export function EventsClient({ events }: { events: EventRecord[] }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((event) => {
           const badge = STATUS_BADGE[event.status];
           return (

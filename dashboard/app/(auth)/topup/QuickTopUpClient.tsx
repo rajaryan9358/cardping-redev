@@ -1,6 +1,7 @@
 "use client";
 
 import { Coins } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Account } from "@/lib/types";
 import { TopUpPackage } from "@/lib/mock/topups";
@@ -16,6 +17,8 @@ function errorMessage(code: string): string {
 }
 
 export function QuickTopUpClient({ account, topUps }: { account: Account; topUps: TopUpPackage[] }) {
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +28,7 @@ export function QuickTopUpClient({ account, topUps }: { account: Account; topUps
     try {
       const res = await clientFetch("/api/billing/coins/topup", {
         method: "POST",
-        body: JSON.stringify({ topupPackageId: pkg.id }),
+        body: JSON.stringify({ topupPackageId: pkg.id, returnTo: returnTo || undefined }),
       });
       const { paymentLinkUrl } = await parseJsonOrThrow<{ paymentLinkUrl: string }>(res);
       window.location.href = paymentLinkUrl;

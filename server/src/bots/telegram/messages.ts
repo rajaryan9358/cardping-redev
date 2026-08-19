@@ -12,6 +12,7 @@ export async function sendMainMenu(chatId: string, greeting: string, activeEvent
       [{ text: activeEventName ? `🏷️ Change Event (${activeEventName})` : "🏷️ Set an Event", data: Ids.menuSetEvent }],
       [{ text: "🪙 Buy Credits", data: Ids.menuBuyCredits }],
       [{ text: "⚙️ Account Settings", data: Ids.menuAccount }],
+      [{ text: "🖥️ View Dashboard", data: Ids.menuViewDashboard }],
     ],
   });
 }
@@ -97,25 +98,28 @@ export const Copy = {
   eventPickerPrompt: "Which event should this go under?",
   askForPhoto: "Sure — send a clear photo of a business card. Good lighting helps accuracy!",
   askForBackPhoto: "Got the front — now send a photo of the <b>back</b> of the card.",
+  processingCard: "📇 Got it — processing your card now…",
   voiceNoteHint: "Want to add a voice note about this contact? Reply to this photo or this message with a voice note.",
   voiceNoteSaved: "Transcript successfully created ✅",
   voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card or its summary message.",
   accountSettingsPrompt: "What would you like to do?",
-  subscriptionSummary: (status: SubscriptionStatus) => {
+  subscriptionSummary: (status: SubscriptionStatus, manageUrl: string) => {
+    const manage = `\n\nManage subscription: ${manageUrl}`;
     if (status.tone === "active") {
       const expires = status.planExpiresAt ? new Date(status.planExpiresAt).toLocaleDateString() : "—";
-      return `You're on <b>${status.planName}</b>, renews/expires ${expires}.\n🪙 ${status.coinBalance} coins remaining.`;
+      return `You're on <b>${status.planName}</b>, renews/expires ${expires}.\n🪙 ${status.coinBalance} coins remaining.${manage}`;
     }
     if (status.tone === "expired") {
-      return `Your <b>${status.planName}</b> plan expired.\n🪙 ${status.coinBalance} coins remaining.`;
+      return `Your <b>${status.planName}</b> plan expired.\n🪙 ${status.coinBalance} coins remaining.${manage}`;
     }
     if (status.tone === "trial") {
-      return `You're on the free trial.\n🪙 ${status.coinBalance} coins remaining.`;
+      return `You're on the free trial.\n🪙 ${status.coinBalance} coins remaining.${manage}`;
     }
-    return `You don't have an active plan.\n🪙 ${status.coinBalance} coins remaining.`;
+    return `You don't have an active plan.\n🪙 ${status.coinBalance} coins remaining.${manage}`;
   },
   buyCreditsLink: (url: string) => `Top up your coin balance here:\n${url}`,
   subscribeLink: (url: string) => `Pick a plan here:\n${url}`,
+  viewDashboardLink: (url: string) => `See all your scanned cards on the dashboard:\n${url}`,
   scanBothSidesToggled: (on: boolean) => `Scan Both Sides is now <b>${on ? "On" : "Off"}</b>.`,
   eventLifetimeSet: (label: string) => `Event lifetime set to <b>${label}</b>.`,
   channelLinkConfirmed: "✅ This Telegram account is now connected to your CardPing dashboard login.",

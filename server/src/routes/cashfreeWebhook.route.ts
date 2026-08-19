@@ -3,12 +3,28 @@ import { cashfreeClient } from "../integrations/cashfree/client";
 import { transactionsRepo } from "../db/repositories/transactions.repo";
 import { usersRepo } from "../db/repositories/users.repo";
 import { accountsRepo } from "../db/repositories/accounts.repo";
+import { channelLinksRepo } from "../db/repositories/channelLinks.repo";
 import { plansRepo } from "../db/repositories/plans.repo";
 import { whatsappClient } from "../integrations/whatsapp/client";
 import { telegramClient } from "../integrations/telegram/client";
 import { generateForTransaction } from "../services/invoiceService";
+import { Account } from "../types/domain";
 import { env } from "../config/env";
 import { childLogger } from "../lib/logger";
+
+/** Sends the same "payment received" confirmation to every channel linked
+ * to this account — a dashboard-originated purchase has no single wa_id/
+ * telegram_chat_id the way a legacy bot-triggered one does. */
+async function notifyLinkedChannels(accountId: string, message: string): Promise<void> {
+  const links = await channelLinksRepo.listByAccountId(accountId);
+  await Promise.all(
+    links.map((link) =>
+      link.channel === "whatsapp"
+        ? whatsappClient.sendText(env.WHATSAPP_PHONE_NUMBER_ID, link.channel_identifier, message)
+        : telegramClient.sendMessage(link.channel_identifier, message),
+    ),
+  );
+}
 
 export const cashfreeWebhookRouter = Router();
 const log = childLogger("cashfree-webhook-route");
@@ -70,6 +86,7 @@ cashfreeWebhookRouter.post("/webhooks/cashfree", async (req, res) => {
         return;
       }
 
+      let updatedAccount: Account = account;
       if (transaction.type === "subscription_payment" && transaction.plan_id) {
         const plan = await plansRepo.findById(transaction.plan_id);
         if (plan) {
@@ -79,10 +96,10 @@ cashfreeWebhookRouter.post("/webhooks/cashfree", async (req, res) => {
               : new Date();
           const expiresAt = new Date(base.getTime() + plan.period_days * 24 * 60 * 60 * 1000);
           await accountsRepo.update(account.id, { plan_id: plan.id, plan_expires_at: expiresAt.toISOString() });
-          await accountsRepo.incrementCoinBalance(account.id, plan.coins_included);
+          updatedAccount = await accountsRepo.incrementCoinBalance(account.id, plan.coins_included);
         }
       } else {
-        await accountsRepo.incrementCoinBalance(account.id, transaction.coins);
+        updatedAccount = await accountsRepo.incrementCoinBalance(account.id, transaction.coins);
       }
 
       await transactionsRepo.markCompleted(transaction.id);
@@ -94,6 +111,12 @@ cashfreeWebhookRouter.post("/webhooks/cashfree", async (req, res) => {
       } catch (err) {
         log.error({ err, transactionId: transaction.id }, "invoice generation failed");
       }
+
+      const confirmation =
+        transaction.type === "subscription_payment"
+          ? `✅ Payment received! Your plan is active — 🪙 ${updatedAccount.coin_balance} coins available.`
+          : `✅ Payment received! ${transaction.coins} coins added — 🪙 ${updatedAccount.coin_balance} coins available.`;
+      await notifyLinkedChannels(account.id, confirmation);
       return;
     }
 

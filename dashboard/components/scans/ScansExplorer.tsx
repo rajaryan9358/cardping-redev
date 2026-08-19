@@ -201,7 +201,7 @@ async function confirmDelete() {
     <div className="flex flex-col gap-4">
       {showToolbar &&
         (selected.size > 0 ? (
-          <div className="flex items-center justify-between rounded-xl bg-ink px-4 py-3 text-white">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-white">
             <div className="flex items-center gap-4 text-sm">
               <span className="font-semibold">{selected.size} selected</span>
               <button type="button" onClick={() => setSelected(new Set())} className="flex items-center gap-1 text-white/70 hover:text-white">

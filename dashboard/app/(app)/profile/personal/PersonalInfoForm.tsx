@@ -9,7 +9,7 @@ import { Account } from "@/lib/types";
 export function PersonalInfoForm({ account }: { account: Account }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
-      <div className="flex gap-8">
+      <div className="flex flex-col gap-6 sm:flex-row sm:gap-8">
         <div className="flex flex-col items-center gap-2">
           <div className="relative size-20 overflow-hidden rounded-full bg-accent-soft">
             {account.avatarUrl ? (
@@ -25,16 +25,16 @@ export function PersonalInfoForm({ account }: { account: Account }) {
           </Button>
           <button type="button" className="text-xs text-muted hover:text-ink">Remove</button>
         </div>
-        <form className="grid flex-1 grid-cols-2 gap-4">
+        <form className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
           <TextField label="First Name" defaultValue={account.fullName.split(" ")[0]} />
           <TextField label="Last Name" defaultValue={account.fullName.split(" ").slice(1).join(" ")} />
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <TextField label="Email Address" type="email" defaultValue={account.email ?? ""} />
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <TextField label="Job Title" placeholder="Senior Lead Strategist" />
           </div>
-          <div className="col-span-2 flex justify-end pt-2">
+          <div className="flex justify-end pt-2 sm:col-span-2">
             <Button type="submit">Save Changes</Button>
           </div>
         </form>

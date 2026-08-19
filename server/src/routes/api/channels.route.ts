@@ -4,7 +4,9 @@ import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
 import { usersRepo } from "../../db/repositories/users.repo";
 import { requireSession } from "../../middleware/requireSession";
 import * as channelLinkService from "../../services/channelLinkService";
+import * as channelOnboardingService from "../../services/channelOnboardingService";
 import { OtpNotConfiguredError, requestOtp, verifyOtp } from "../../services/otpService";
+import { ChannelLinkChannel } from "../../types/domain";
 import { childLogger } from "../../lib/logger";
 import { parseBody } from "./validate";
 
@@ -19,6 +21,22 @@ channelsRouter.get("/channels", requireSession, async (req, res) => {
 channelsRouter.delete("/channels/:id", requireSession, async (req, res) => {
   await channelLinksRepo.deleteById(req.params.id, req.account!.id);
   res.json({ ok: true });
+});
+
+/** wa.me/t.me link back to wherever a bot-issued magic-login flow started
+ * — used by the mobile /topup and /subscribe status pages' "back to
+ * channel" button. Prefers the requested channel; falls back to whichever
+ * one is actually linked if that one isn't (e.g. redeployed link, or the
+ * hint is stale). */
+channelsRouter.get("/channels/return-url", requireSession, async (req, res) => {
+  const links = await channelLinksRepo.listByAccountId(req.account!.id);
+  const requested = typeof req.query.channel === "string" ? (req.query.channel as ChannelLinkChannel) : undefined;
+  const link = links.find((l) => l.channel === requested) ?? links[0];
+  if (!link) {
+    res.json({ returnUrl: null });
+    return;
+  }
+  res.json({ returnUrl: channelOnboardingService.buildChannelReturnUrl(link.channel, link.channel_identifier) });
 });
 
 // ── WhatsApp OTP channel link ───────────────────────────────────────────

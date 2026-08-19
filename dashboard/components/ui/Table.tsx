@@ -3,7 +3,12 @@ import { cn } from "@/lib/cn";
 export function TableCard({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("w-full overflow-hidden rounded-xl border border-border bg-surface shadow-soft", className)}>
-      <div className="overflow-x-auto">{children}</div>
+      {/* Rows use flex-1 columns, which squish to fit rather than overflow
+          on their own — the min-width forces genuine horizontal scrolling
+          on narrow screens instead of illegible, cramped columns. */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[720px]">{children}</div>
+      </div>
     </div>
   );
 }

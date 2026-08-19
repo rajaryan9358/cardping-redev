@@ -34,9 +34,9 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatCard label="Total Leads" value={leads.length} icon={Users} />
-        <div className="col-span-2 flex items-center justify-center rounded-xl border border-border bg-accent-soft text-sm text-accent-text">
+        <div className="flex min-h-24 items-center justify-center rounded-xl border border-border bg-accent-soft text-sm text-accent-text sm:col-span-2">
           Map preview
         </div>
       </div>

@@ -46,7 +46,7 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
       return;
 
     case Ids.menuBuyCredits: {
-      const linkUrl = await createMagicLoginLink(user.account_id!, "/topup");
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/topup?returnTo=telegram");
       await telegramClient.sendMessage(chatId, Copy.buyCreditsLink(linkUrl));
       return;
     }
@@ -55,6 +55,12 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
       await usersRepo.setState(user.user_id, "awaiting_account_settings_choice");
       const status = await getSubscriptionStatus(user);
       await sendAccountSettingsMenu(chatId, status, Boolean(user.scan_both_sides), user.event_lifetime_hours);
+      return;
+    }
+
+    case Ids.menuViewDashboard: {
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/home");
+      await telegramClient.sendMessage(chatId, Copy.viewDashboardLink(linkUrl));
       return;
     }
 

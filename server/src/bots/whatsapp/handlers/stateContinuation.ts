@@ -1,14 +1,15 @@
 import { whatsappClient } from "../../../integrations/whatsapp/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
 import { accountsRepo } from "../../../db/repositories/accounts.repo";
-import { setActiveEvent, setActiveEventById } from "../../../services/eventService";
+import { setActiveEvent, setActiveEventById, isEventExpired } from "../../../services/eventService";
 import { finalizeScan } from "../../../services/scanFlowService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
+import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { registerCardMessageRef } from "../../../services/cardService";
 import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types";
 import { UserWithEvent } from "../../../types/domain";
 import { resumeScanAfterEventSet, sendScanResult } from "./image";
-import { Copy, sendEventLifetimePicker, eventLifetimeLabel } from "../messages";
+import { Copy, sendEventLifetimePicker, sendEventPicker, eventLifetimeLabel } from "../messages";
 import { Ids } from "../ids";
 
 const EVENT_LIFETIME_HOURS: Record<string, number | null> = {
@@ -66,12 +67,24 @@ export async function tryContinuePendingState(
 
     case "awaiting_back_photo": {
       if (msg.type !== "image" || !msg.mediaId || !user.pending_front_media_id) return false;
+
+      // The event may have expired while we were waiting for the back
+      // photo — don't tag the card to a stale event. Hold both images and
+      // ask for a fresh one instead, same picker as a brand-new scan.
+      if (!user.active_event_id || isEventExpired(user)) {
+        await usersRepo.setPendingMedia(user.user_id, user.pending_front_media_id, msg.mediaId);
+        await usersRepo.setState(user.user_id, "awaiting_event_choice");
+        await sendEventPicker(phoneNumberId, from, user.user_id);
+        return true;
+      }
+
       await usersRepo.setState(user.user_id, "idle");
 
       const [front, back] = await Promise.all([
         whatsappClient.downloadMediaById(user.pending_front_media_id),
         whatsappClient.downloadMediaById(msg.mediaId),
       ]);
+      await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
       const { card, extracted } = await finalizeScan({
         userId: user.user_id,
         accountId: user.account_id,
@@ -94,7 +107,8 @@ export async function tryContinuePendingState(
       if (msg.buttonId === Ids.accountSubscription) {
         await usersRepo.setState(user.user_id, "idle");
         const status = await getSubscriptionStatus(user);
-        await whatsappClient.sendText(phoneNumberId, from, Copy.subscriptionSummary(status));
+        const manageUrl = await createMagicLoginLink(user.account_id!, "/subscribe?returnTo=whatsapp");
+        await whatsappClient.sendText(phoneNumberId, from, Copy.subscriptionSummary(status, manageUrl));
         return true;
       }
       if (msg.buttonId === Ids.accountScanBothSides) {

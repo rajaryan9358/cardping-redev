@@ -42,6 +42,10 @@ export function SubscribedAccountsTable({
 
   return (
     <TableCard>
+      <p className="border-b border-border px-6 py-3 text-sm text-muted">
+        Dashboard logins with an active plan that haven&apos;t linked a WhatsApp or Telegram number yet — they
+        won&apos;t show up in Subscribed Users, since that list is keyed by channel identity.
+      </p>
       <TableHeaderRow>
         <Th>Account</Th>
         <Th>Plan</Th>

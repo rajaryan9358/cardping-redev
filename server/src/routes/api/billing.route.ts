@@ -57,7 +57,19 @@ function customerPhone(mobile: string | null): string {
   return mobile ?? "9999999999";
 }
 
-const subscribeSchema = z.object({ planId: z.string() });
+// Set when checkout started from the bot-issued mobile /subscribe or
+// /topup page (see magicLoginService.ts) — Cashfree only supports one
+// static return_url per link, not a dynamic one, so this picks between the
+// mobile status page (with its 3-second auto-return-to-channel) and the
+// desktop dashboard's generic success page.
+const returnToSchema = z.enum(["whatsapp", "telegram"]).optional();
+
+function buildReturnUrl(kind: "topup" | "subscribe", returnTo: "whatsapp" | "telegram" | undefined): string | undefined {
+  if (!returnTo) return undefined;
+  return `${env.PUBLIC_BASE_URL}/${kind}/status?returnTo=${returnTo}`;
+}
+
+const subscribeSchema = z.object({ planId: z.string(), returnTo: returnToSchema });
 
 billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
   const body = parseBody(subscribeSchema, req, res);
@@ -80,6 +92,7 @@ billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
       phoneNumber: customerPhone(account.mobile),
       customerEmail: account.email ?? undefined,
       notifyUrl: `${env.PUBLIC_BASE_URL}/webhooks/cashfree`,
+      returnUrl: buildReturnUrl("subscribe", body.returnTo),
     });
     await transactionsRepo.createPendingAccountPurchase({
       accountId: account.id,
@@ -96,7 +109,7 @@ billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
   }
 });
 
-const topupSchema = z.object({ topupPackageId: z.string() });
+const topupSchema = z.object({ topupPackageId: z.string(), returnTo: returnToSchema });
 
 billingRouter.post("/billing/coins/topup", requireSession, async (req, res) => {
   const body = parseBody(topupSchema, req, res);
@@ -119,6 +132,7 @@ billingRouter.post("/billing/coins/topup", requireSession, async (req, res) => {
       phoneNumber: customerPhone(account.mobile),
       customerEmail: account.email ?? undefined,
       notifyUrl: `${env.PUBLIC_BASE_URL}/webhooks/cashfree`,
+      returnUrl: buildReturnUrl("topup", body.returnTo),
     });
     await transactionsRepo.createPendingAccountPurchase({
       accountId: account.id,

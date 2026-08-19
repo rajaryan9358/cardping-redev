@@ -6,6 +6,7 @@ export const Ids = {
   menuSetEvent: "menu_set_event",
   menuBuyCredits: "menu_buy_credits",
   menuAccount: "menu_account",
+  menuViewDashboard: "menu_view_dashboard",
 
   eventChangeYes: "event_change_yes",
   eventChangeNo: "event_change_no",

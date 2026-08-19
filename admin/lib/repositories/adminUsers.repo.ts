@@ -154,11 +154,17 @@ async function getUserCards(userId: string) {
   return data ?? [];
 }
 
+/** Dashboard-originated purchases (subscribe/top-up from the dashboard or a
+ * bot-issued magic-login link) are stored with account_id set and user_id
+ * null — filtering on user_id alone silently hid every one of them once a
+ * channel got linked. Matches either. */
 async function getUserTransactions(userId: string) {
+  const accountId = await resolveAccountId(userId);
+  const filter = accountId ? `user_id.eq.${userId},account_id.eq.${accountId}` : `user_id.eq.${userId}`;
   const { data, error } = await supabase
     .from("transactions")
     .select("id, type, coins, status, created_at")
-    .eq("user_id", userId)
+    .or(filter)
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;

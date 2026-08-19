@@ -57,7 +57,7 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-ink">Subscription Management</h1>
           <p className="text-sm text-muted">Manage your plan, billing cycle, and coin balance.</p>
@@ -72,7 +72,7 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
       {lowBalance && <LowBalanceCard coinBalance={coinBalance} />}
 
       {status.tone === "active" && currentPlan && (
-        <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-6 shadow-soft">
+        <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-6 shadow-soft sm:flex-row sm:items-center sm:justify-between">
           <div>
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
               <CreditCard className="size-3.5" strokeWidth={2} /> Current Plan
@@ -93,7 +93,7 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan) => {
           const isCurrent = plan.id === account.planId;
           return (

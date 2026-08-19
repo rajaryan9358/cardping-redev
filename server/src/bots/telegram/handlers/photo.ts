@@ -42,6 +42,7 @@ export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWith
   }
 
   const buffer = await telegramClient.downloadFileById(msg.photoFileId);
+  await telegramClient.sendMessage(chatId, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
@@ -90,6 +91,32 @@ export async function resumeScanAfterEventSet(chatId: string, userId: string): P
   const user = await usersRepo.findById(userId);
   if (!user || !user.pending_front_media_id) return;
 
+  // Both images are already held (the back photo arrived while the event
+  // had expired, see stateContinuation.ts's awaiting_back_photo case) —
+  // finalize directly instead of asking for a back photo we already have.
+  if (user.pending_back_media_id) {
+    const [frontBuffer, backBuffer] = await Promise.all([
+      telegramClient.downloadFileById(user.pending_front_media_id),
+      telegramClient.downloadFileById(user.pending_back_media_id),
+    ]);
+    await telegramClient.sendMessage(chatId, Copy.processingCard);
+    const { card, extracted } = await finalizeScan({
+      userId: user.user_id,
+      accountId: user.account_id,
+      eventId: user.active_event_id!,
+      channel: "telegram",
+      messageId: user.pending_front_media_id,
+      frontImageId: user.pending_front_media_id,
+      frontImageBuffer: frontBuffer,
+      frontMimeType: "image/jpeg",
+      backImageId: user.pending_back_media_id,
+      backImageBuffer: backBuffer,
+      backMimeType: "image/jpeg",
+    });
+    await sendScanResult(chatId, undefined, card, extracted, user);
+    return;
+  }
+
   if (decideScanAction(user) === "ask_back_photo") {
     await usersRepo.setState(userId, "awaiting_back_photo");
     await telegramClient.sendMessage(chatId, Copy.askForBackPhoto);
@@ -97,6 +124,7 @@ export async function resumeScanAfterEventSet(chatId: string, userId: string): P
   }
 
   const buffer = await telegramClient.downloadFileById(user.pending_front_media_id);
+  await telegramClient.sendMessage(chatId, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
@@ -113,10 +141,10 @@ export async function resumeScanAfterEventSet(chatId: string, userId: string): P
 
 async function sendOutOfCoins(chatId: string, user: UserWithEvent): Promise<void> {
   const status = await getSubscriptionStatus(user);
-  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup");
+  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup?returnTo=telegram");
 
   if (status.tone === "none" || status.tone === "expired") {
-    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe");
+    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe?returnTo=telegram");
     await telegramClient.sendMessage(chatId, Copy.outOfCoinsNoPlan(subscribeUrl, topUpUrl));
     return;
   }

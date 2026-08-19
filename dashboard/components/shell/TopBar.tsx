@@ -1,6 +1,9 @@
-import { Coins } from "lucide-react";
+"use client";
+
+import { Coins, Menu } from "lucide-react";
 import Link from "next/link";
 import { AvatarMenu } from "./AvatarMenu";
+import { useMobileNav } from "./MobileNavContext";
 import { Notification, NotificationsMenu } from "./NotificationsMenu";
 
 interface TopBarProps {
@@ -12,8 +15,13 @@ interface TopBarProps {
 }
 
 export function TopBar({ coinBalance, avatarUrl, accountName, accountEmail, notifications }: TopBarProps) {
+  const { toggle } = useMobileNav();
+
   return (
-    <header className="fixed left-64 right-0 top-0 z-10 flex h-16 items-center justify-end border-b border-border bg-surface px-8">
+    <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-surface px-4 sm:px-6 md:left-64 md:justify-end md:px-8">
+      <button type="button" aria-label="Open menu" onClick={toggle} className="text-muted-2 md:hidden">
+        <Menu className="size-6" strokeWidth={2} />
+      </button>
       <div className="flex items-center gap-2">
         <Link
           href="/subscription"

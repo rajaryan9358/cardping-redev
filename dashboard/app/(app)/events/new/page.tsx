@@ -79,7 +79,7 @@ export default function NewEventPage() {
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 pb-6">
+        <div className="grid grid-cols-1 gap-6 pb-6 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted">
               Event Name <span className="text-danger-text">*</span>
@@ -101,7 +101,7 @@ export default function NewEventPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 pb-6">
+        <div className="grid grid-cols-1 gap-6 pb-6 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted">Date</label>
             <input

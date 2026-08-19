@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, Settings, ShieldCheck, User, Users } from "lucide-react";
+import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, Settings, ShieldCheck, User, Users, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { performLogout } from "@/lib/logout";
+import { useMobileNav } from "./MobileNavContext";
 
 const NAV_ITEMS = [
   { href: "/home", label: "Home", icon: Home },
@@ -42,18 +43,42 @@ export function Sidebar({
   const profileActive = pathname.startsWith("/profile");
   const [profileOpen, setProfileOpen] = useState(true);
   const profileItems = hasPassword ? PROFILE_ITEMS : PROFILE_ITEMS.filter((item) => item.href !== "/profile/password");
+  const { open, close } = useMobileNav();
 
   return (
-    <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col border-r border-border bg-surface py-8 pl-4 pr-3">
-      <div className="flex items-center px-3 pb-8">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent">
-          <span className="text-base font-bold leading-6 text-white">C</span>
+    <>
+      {/* Backdrop — mobile only, tap to close. Sidebar itself stays
+          permanently visible on desktop (md:translate-x-0), so this never
+          renders there regardless of `open`. */}
+      <button
+        type="button"
+        aria-label="Close menu"
+        onClick={close}
+        className={cn(
+          "fixed inset-0 z-30 bg-ink/40 transition-opacity md:hidden",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+      />
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-border bg-surface py-8 pl-4 pr-3 transition-transform duration-200 md:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="flex items-center justify-between px-3 pb-8">
+          <div className="flex items-center">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent">
+              <span className="text-base font-bold leading-6 text-white">C</span>
+            </div>
+            <div className="flex flex-col pl-3">
+              <h1 className="text-xl font-semibold leading-6 tracking-tight text-ink">CardPing</h1>
+              <p className="text-xs font-medium leading-4 text-muted">Lead Management</p>
+            </div>
+          </div>
+          <button type="button" aria-label="Close menu" onClick={close} className="text-muted-2 md:hidden">
+            <X className="size-5" strokeWidth={2} />
+          </button>
         </div>
-        <div className="flex flex-col pl-3">
-          <h1 className="text-xl font-semibold leading-6 tracking-tight text-ink">CardPing</h1>
-          <p className="text-xs font-medium leading-4 text-muted">Lead Management</p>
-        </div>
-      </div>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
@@ -131,6 +156,7 @@ export function Sidebar({
           )}
         </div>
       </nav>
-    </aside>
+      </aside>
+    </>
   );
 }

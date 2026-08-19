@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Sparkles } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Account, Plan } from "@/lib/types";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
@@ -15,6 +16,8 @@ function errorMessage(code: string): string {
 }
 
 export function QuickSubscribeClient({ account, plans }: { account: Account; plans: Plan[] }) {
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +27,7 @@ export function QuickSubscribeClient({ account, plans }: { account: Account; pla
     try {
       const res = await clientFetch("/api/billing/subscribe", {
         method: "POST",
-        body: JSON.stringify({ planId: plan.id }),
+        body: JSON.stringify({ planId: plan.id, returnTo: returnTo || undefined }),
       });
       const { paymentLinkUrl } = await parseJsonOrThrow<{ paymentLinkUrl: string }>(res);
       window.location.href = paymentLinkUrl;

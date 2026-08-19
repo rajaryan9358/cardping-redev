@@ -49,7 +49,7 @@ export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWit
       return;
 
     case Ids.menuBuyCredits: {
-      const linkUrl = await createMagicLoginLink(user.account_id!, "/topup");
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/topup?returnTo=whatsapp");
       await whatsappClient.sendText(phoneNumberId, from, Copy.buyCreditsLink(linkUrl));
       return;
     }
@@ -58,6 +58,12 @@ export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWit
       await usersRepo.setState(user.user_id, "awaiting_account_settings_choice");
       const status = await getSubscriptionStatus(user);
       await sendAccountSettingsMenu(phoneNumberId, from, status, Boolean(user.scan_both_sides), user.event_lifetime_hours);
+      return;
+    }
+
+    case Ids.menuViewDashboard: {
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/home");
+      await whatsappClient.sendText(phoneNumberId, from, Copy.viewDashboardLink(linkUrl));
       return;
     }
 

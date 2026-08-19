@@ -158,10 +158,10 @@ export function CardDetailClient({
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-6 lg:col-span-2">
           <Section title="Contact Information" icon={Contact}>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Business Email" value={card.businessEmail} />
               <Field label="Personal Email" value={card.personalEmail} />
               <Field label="Phone 1" value={card.phone1} />
@@ -183,7 +183,7 @@ export function CardDetailClient({
           )}
 
           <Section title="Card Images" icon={ImageIcon}>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {([
                 ["Front", card.imageUrl],
                 ["Back", card.imageBackUrl],
