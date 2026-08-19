@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { env } from "../config/env";
 import { channelLinksRepo } from "../db/repositories/channelLinks.repo";
 import { otpCodesRepo } from "../db/repositories/otpCodes.repo";
+import { usersRepo } from "../db/repositories/users.repo";
 import { ChannelLink, ChannelLinkChannel } from "../types/domain";
 import * as walletService from "./walletService";
 
@@ -22,6 +23,17 @@ export async function linkChannel(
   const link = await channelLinksRepo.create({ accountId, usersId, channel, channelIdentifier });
   await walletService.mergeLegacyBalanceOnLink(usersId, accountId, legacyBalance);
   return link;
+}
+
+/** marketing_opt_in lives per channel identity, not on the account — this
+ * applies one value to every channel currently linked to it. Shared by the
+ * dashboard preferences toggle (account.route.ts) and the signup consent
+ * checkbox (auth.route.ts), so both stay in sync with the same behavior:
+ * an account with no linked channel yet is a harmless no-op, since there's
+ * nothing to set until one links. */
+export async function setMarketingOptInForAccount(accountId: string, optIn: boolean): Promise<void> {
+  const links = await channelLinksRepo.listByAccountId(accountId);
+  await Promise.all(links.map((link) => usersRepo.setMarketingOptIn(link.users_id, optIn)));
 }
 
 function hashCode(code: string): string {

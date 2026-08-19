@@ -1,5 +1,6 @@
 import { adminUsersRepo, UserStatusFilter } from "../../../lib/repositories/adminUsers.repo";
 import { adminSubscriptionsRepo } from "../../../lib/repositories/adminSubscriptions.repo";
+import { env } from "../../../lib/env";
 import { UsersTable } from "./UsersTable";
 
 const PAGE_SIZE = 20;
@@ -44,6 +45,7 @@ export default async function UsersPage({
         expiresAfter={expiresAfter ?? ""}
         sort={sort ?? ""}
         plans={plans}
+        lowBalanceThreshold={env.LOW_BALANCE_THRESHOLD}
       />
     </div>
   );

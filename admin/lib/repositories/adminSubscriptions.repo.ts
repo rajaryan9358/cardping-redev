@@ -28,134 +28,131 @@ export interface SubscriptionSummary {
   totalEarningInr: number;
 }
 
-/** account_ids that already have a linked channel — used to exclude them
- * from the unlinked-accounts-only queries below, since a linked
- * account's plan is already fully represented via user_with_event's
- * effective_plan_id (resolve-through, not re-keyed — see
- * adminUsers.repo.ts). Without this exclusion, a linked subscriber would
- * get counted/listed twice: once as a channel identity, once as an account. */
-async function linkedAccountIds(): Promise<Set<string>> {
-  const { data, error } = await supabase.from("channel_links").select("account_id");
+/** users.id values that already have a channel_links row (any channel) —
+ * used to find the legacy-only subscribers below: a `users` row can carry
+ * its own plan_id/plan_expires_at (pre-account-model fallback columns,
+ * see user_with_event's effective_plan_id) with no account and no
+ * channel_links row at all. Everyone else's plan lives on `accounts`,
+ * queried directly so an account linked to 2 channels is never
+ * counted/listed twice. */
+async function linkedUsersIds(): Promise<Set<string>> {
+  const { data, error } = await supabase.from("channel_links").select("users_id");
   if (error) throw error;
-  return new Set((data ?? []).map((row) => row.account_id));
+  return new Set((data ?? []).map((row) => row.users_id));
 }
 
 async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
-  const nowIso = new Date().toISOString();
-
-  const [totalRes, activeRes, expiredRes, earningRes, accounts, linked] = await Promise.all([
-    supabase.from("user_with_event").select("*", { count: "exact", head: true }).not("effective_plan_id", "is", null),
-    supabase
-      .from("user_with_event")
-      .select("*", { count: "exact", head: true })
-      .not("effective_plan_id", "is", null)
-      .gt("effective_plan_expires_at", nowIso),
-    supabase
-      .from("user_with_event")
-      .select("*", { count: "exact", head: true })
-      .not("effective_plan_id", "is", null)
-      .lte("effective_plan_expires_at", nowIso),
+  const [accountsRes, legacyUsersRes, earningRes, linked] = await Promise.all([
+    supabase.from("accounts").select("plan_expires_at").not("plan_id", "is", null),
+    supabase.from("users").select("id, plan_expires_at").not("plan_id", "is", null),
     supabase
       .from("transactions")
       .select("amount_inr")
       .eq("type", "subscription_payment")
       .eq("status", "completed"),
-    supabase.from("accounts").select("id, plan_id, plan_expires_at").not("plan_id", "is", null),
-    linkedAccountIds(),
+    linkedUsersIds(),
   ]);
 
-  if (totalRes.error) throw totalRes.error;
-  if (activeRes.error) throw activeRes.error;
-  if (expiredRes.error) throw expiredRes.error;
+  if (accountsRes.error) throw accountsRes.error;
+  if (legacyUsersRes.error) throw legacyUsersRes.error;
   if (earningRes.error) throw earningRes.error;
-  if (accounts.error) throw accounts.error;
 
-  const totalEarningInr = (earningRes.data ?? []).reduce(
-    (sum, row) => sum + Number(row.amount_inr ?? 0),
-    0,
-  );
-
-  // Accounts with a plan but no linked channel at all — the only
-  // subscribers not already reachable via user_with_event.
-  const unlinkedAccounts = (accounts.data ?? []).filter((a) => !linked.has(a.id));
-  const unlinkedActive = unlinkedAccounts.filter(
-    (a) => a.plan_expires_at && new Date(a.plan_expires_at).getTime() > Date.now(),
-  ).length;
+  const legacyOnly = (legacyUsersRes.data ?? []).filter((u) => !linked.has(u.id));
+  const all = [...(accountsRes.data ?? []), ...legacyOnly];
+  const active = all.filter((r) => r.plan_expires_at && new Date(r.plan_expires_at).getTime() > Date.now()).length;
+  const totalEarningInr = (earningRes.data ?? []).reduce((sum, row) => sum + Number(row.amount_inr ?? 0), 0);
 
   return {
-    totalSubscribed: (totalRes.count ?? 0) + unlinkedAccounts.length,
-    active: (activeRes.count ?? 0) + unlinkedActive,
-    expired: (expiredRes.count ?? 0) + (unlinkedAccounts.length - unlinkedActive),
+    totalSubscribed: all.length,
+    active,
+    expired: all.length - active,
     totalEarningInr,
   };
 }
 
 export interface SubscribedUserRow {
-  user_id: string;
+  /** Row key: an account_id (kind "account") or a legacy users.id (kind
+   * "legacy_user" — a plan set directly on `users` with no account at all). */
+  id: string;
+  kind: "account" | "legacy_user";
   full_name: string | null;
   email: string | null;
   wa_id: string | null;
+  /** /users/<id> link target — any one of the account's linked channel
+   * identities (the admin app's only detail page is per-channel-identity,
+   * not per-account); null when there's no linked channel to view at all. */
+  detail_user_id: string | null;
+  /** users.id of the WhatsApp-linked channel specifically — sendRenewalReminderAction
+   * needs a WhatsApp identity to message, which a Telegram-only link can't provide. */
+  reminder_user_id: string | null;
   plan_id: string;
   plan_expires_at: string | null;
+  channels: ("whatsapp" | "telegram")[];
 }
 
-// Channel identities (bot users) with a plan — resolved through
-// effective_plan_id, so this already covers both legacy-only users and
-// users whose plan actually lives on a linked account.
+/** One row per real subscriber — an account (regardless of how many
+ * channels it has linked, 0/1/2) or a legacy-only users row with its own
+ * plan and no account. Small admin scale — fetching all and sorting/
+ * paginating in-memory, same tradeoff this file already used before. */
 async function listSubscribedUsers(page: number, pageSize: number): Promise<Paginated<SubscribedUserRow>> {
+  const [{ data: accounts, error: accErr }, { data: links, error: linkErr }, { data: legacyUsers, error: userErr }, linked] =
+    await Promise.all([
+      supabase.from("accounts").select("id, full_name, email, plan_id, plan_expires_at").not("plan_id", "is", null),
+      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier"),
+      supabase.from("users").select("id, full_name, email, wa_id, plan_id, plan_expires_at").not("plan_id", "is", null),
+      linkedUsersIds(),
+    ]);
+  if (accErr) throw accErr;
+  if (linkErr) throw linkErr;
+  if (userErr) throw userErr;
+
+  const linksByAccount = new Map<string, typeof links>();
+  for (const link of links ?? []) {
+    const arr = linksByAccount.get(link.account_id) ?? [];
+    arr.push(link);
+    linksByAccount.set(link.account_id, arr);
+  }
+
+  const accountRows: SubscribedUserRow[] = (accounts ?? []).map((a) => {
+    const accountLinks = linksByAccount.get(a.id) ?? [];
+    const waLink = accountLinks.find((l) => l.channel === "whatsapp");
+    return {
+      id: a.id,
+      kind: "account",
+      full_name: a.full_name,
+      email: a.email,
+      wa_id: waLink?.channel_identifier ?? null,
+      detail_user_id: accountLinks[0]?.users_id ?? null,
+      reminder_user_id: waLink?.users_id ?? null,
+      plan_id: a.plan_id as string,
+      plan_expires_at: a.plan_expires_at,
+      channels: accountLinks.map((l) => l.channel as "whatsapp" | "telegram"),
+    };
+  });
+
+  const legacyRows: SubscribedUserRow[] = (legacyUsers ?? [])
+    .filter((u) => !linked.has(u.id))
+    .map((u) => ({
+      id: u.id,
+      kind: "legacy_user",
+      full_name: u.full_name,
+      email: u.email,
+      wa_id: u.wa_id,
+      detail_user_id: u.id,
+      reminder_user_id: u.wa_id ? u.id : null,
+      plan_id: u.plan_id as string,
+      plan_expires_at: u.plan_expires_at,
+      channels: u.wa_id ? (["whatsapp"] as const) : [],
+    }));
+
+  const allRows = [...accountRows, ...legacyRows].sort((x, y) => {
+    if (!x.plan_expires_at) return 1;
+    if (!y.plan_expires_at) return -1;
+    return new Date(x.plan_expires_at).getTime() - new Date(y.plan_expires_at).getTime();
+  });
+
   const from = (page - 1) * pageSize;
-  const { data, error, count } = await supabase
-    .from("user_with_event")
-    .select("user_id, full_name, email, wa_id, effective_plan_id, effective_plan_expires_at", { count: "exact" })
-    .not("effective_plan_id", "is", null)
-    .order("effective_plan_expires_at", { ascending: true })
-    .range(from, from + pageSize - 1);
-  if (error) throw error;
-  const rows = (data ?? []).map((row: any) => ({
-    user_id: row.user_id,
-    full_name: row.full_name,
-    email: row.email,
-    wa_id: row.wa_id,
-    plan_id: row.effective_plan_id,
-    plan_expires_at: row.effective_plan_expires_at,
-  }));
-  return { rows, total: count ?? 0 };
-}
-
-export interface SubscribedAccountRow {
-  account_id: string;
-  full_name: string | null;
-  email: string | null;
-  plan_id: string;
-  plan_expires_at: string | null;
-}
-
-/** Accounts with a plan but no linked channel — invisible to
- * listSubscribedUsers above (which is keyed by channel identity), so this
- * is the only place they show up. Small admin scale — fetching all and
- * filtering client-side is fine here, same tradeoff as
- * getSubscriptionSummary's linkedAccountIds() call. */
-async function listSubscribedAccounts(page: number, pageSize: number): Promise<Paginated<SubscribedAccountRow>> {
-  const [{ data, error }, linked] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("id, full_name, email, plan_id, plan_expires_at")
-      .not("plan_id", "is", null)
-      .order("plan_expires_at", { ascending: true }),
-    linkedAccountIds(),
-  ]);
-  if (error) throw error;
-
-  const unlinked = (data ?? []).filter((a) => !linked.has(a.id));
-  const from = (page - 1) * pageSize;
-  const rows = unlinked.slice(from, from + pageSize).map((a) => ({
-    account_id: a.id,
-    full_name: a.full_name,
-    email: a.email,
-    plan_id: a.plan_id as string,
-    plan_expires_at: a.plan_expires_at,
-  }));
-  return { rows, total: unlinked.length };
+  return { rows: allRows.slice(from, from + pageSize), total: allRows.length };
 }
 
 async function resolveAccountId(userId: string): Promise<string | null> {
@@ -233,8 +230,9 @@ async function clearUserPlan(userId: string): Promise<void> {
 }
 
 /** Same logic as setUserPlan, targeting an account directly — used both
- * as setUserPlan's linked-account branch and directly by the Subscribed
- * Accounts section (accounts with no linked channel at all). */
+ * as setUserPlan's linked-account branch and directly by the unified
+ * Subscribed Users table for any "account" kind row (see
+ * listSubscribedUsers), regardless of how many channels it has linked. */
 async function setAccountPlan(accountId: string, plan: Plan): Promise<void> {
   const { data: account, error: accountError } = await supabase
     .from("accounts")
@@ -422,7 +420,6 @@ export const adminSubscriptionsRepo = {
   listPlans,
   getSubscriptionSummary,
   listSubscribedUsers,
-  listSubscribedAccounts,
   setUserPlan,
   clearUserPlan,
   setAccountPlan,

@@ -43,6 +43,7 @@ export async function sendAccountSettingsMenu(
   status: SubscriptionStatus,
   scanBothSides: boolean,
   eventLifetimeHours: number | null,
+  marketingOptIn: boolean,
 ): Promise<void> {
   await whatsappClient.sendList(phoneNumberId, to, Copy.accountSettingsPrompt, "Choose an option", [
     {
@@ -59,6 +60,11 @@ export async function sendAccountSettingsMenu(
       id: Ids.accountEventLifetime,
       title: `Event Lifetime: ${eventLifetimeLabel(eventLifetimeHours)}`,
       description: "How long an event stays active",
+    },
+    {
+      id: Ids.accountMarketingOptIn,
+      title: `Marketing Updates: ${marketingOptIn ? "On" : "Off"}`,
+      description: "Tap to toggle",
     },
   ]);
 }
@@ -118,6 +124,8 @@ export const Copy = {
     "Sure — please upload a clear photo of a business card. Good lighting helps accuracy!",
   askForBackPhoto: "Got the front — now send a photo of the *back* of the card.",
   processingCard: "📇 Got it — processing your card now…",
+  tooManyImages:
+    "🤔 Not sure how to handle more than 2 images at once — please send one photo, or two (front and back) of the same card.",
   voiceNoteHint:
     "Want to add a voice note about this contact? Reply to this photo, this message, or the contact card with a voice note.",
   voiceNoteSaved: "Transcript successfully created ✅",
@@ -141,6 +149,10 @@ export const Copy = {
   subscribeLink: (url: string) => `Pick a plan here:\n${url}`,
   viewDashboardLink: (url: string) => `See all your scanned cards on the dashboard:\n${url}`,
   scanBothSidesToggled: (on: boolean) => `Scan Both Sides is now *${on ? "On" : "Off"}*.`,
+  marketingOptInToggled: (on: boolean) =>
+    on
+      ? "Marketing Updates are now *On* — you may get occasional offers and news."
+      : "Marketing Updates are now *Off*.",
   eventLifetimeSet: (label: string) => `Event lifetime set to *${label}*.`,
   channelOnboardingPrompt: (url: string) =>
     `👋 Welcome to CardPing! To start scanning cards, finish setting up your account here (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,

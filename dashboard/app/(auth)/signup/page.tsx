@@ -8,6 +8,8 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
+import { useExistingSession } from "@/lib/hooks/useExistingSession";
+import { OnboardAccountPicker } from "../onboarding/OnboardAccountPicker";
 
 function IconField({
   icon: Icon,
@@ -52,11 +54,13 @@ function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [marketingOptIn, setMarketingOptIn] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [channelContext, setChannelContext] = useState<ChannelContext | null>(null);
   const [tokenExpired, setTokenExpired] = useState(false);
+  const { loading: sessionLoading, account: existingAccount } = useExistingSession(Boolean(onboardToken));
 
   useEffect(() => {
     if (!onboardToken) return;
@@ -88,6 +92,7 @@ function SignUpForm() {
           password,
           fullName: fullName || undefined,
           onboardToken: channelContext ? onboardToken : undefined,
+          marketingOptIn,
         }),
       });
       const { linkedChannel, returnUrl } = await parseJsonOrThrow<{ linkedChannel?: string; returnUrl?: string }>(res);
@@ -101,6 +106,29 @@ function SignUpForm() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Opened while a dashboard session is already active (the account-picker
+  // case) — skip the create-account form entirely and let the visitor
+  // attach this channel to the signed-in account, or log out first.
+  if (onboardToken && channelContext && existingAccount) {
+    return (
+      <div className="flex w-full max-w-[480px] flex-col gap-8">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <div className="mb-1 flex size-11 items-center justify-center rounded-xl bg-accent text-lg font-bold text-white">C</div>
+          <h1 className="text-[28px] font-semibold tracking-tight text-ink">CardPing</h1>
+        </div>
+        <OnboardAccountPicker
+          accountEmail={existingAccount.email}
+          onboardToken={onboardToken}
+          channel={channelContext.channel}
+        />
+      </div>
+    );
+  }
+
+  if (onboardToken && sessionLoading) {
+    return <div className="size-11 animate-pulse rounded-xl bg-accent-soft" aria-hidden />;
   }
 
   return (
@@ -182,6 +210,16 @@ function SignUpForm() {
             </span>
           </label>
 
+          <label className="flex items-start gap-3 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={marketingOptIn}
+              onChange={(e) => setMarketingOptIn(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border text-accent"
+            />
+            <span>Send me occasional offers and news about CardPing.</span>
+          </label>
+
           <Button type="submit" className="w-full py-3" loading={submitting}>
             Create account
           </Button>
@@ -197,7 +235,10 @@ function SignUpForm() {
 
       <p className="text-center text-sm text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="text-sm font-semibold text-accent">
+        <Link
+          href={onboardToken ? `/login?onboard=${encodeURIComponent(onboardToken)}` : "/login"}
+          className="text-sm font-semibold text-accent"
+        >
           Log in
         </Link>
       </p>

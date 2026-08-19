@@ -1,6 +1,6 @@
 "use client";
 
-import { ScanLine } from "lucide-react";
+import { Megaphone, ScanLine } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Account } from "@/lib/types";
@@ -18,6 +18,7 @@ const LIFETIME_OPTIONS: { label: string; hours: number | null }[] = [
 export function PreferencesForm({ account }: { account: Account }) {
   const [scanBothSides, setScanBothSides] = useState(account.scanBothSides);
   const [eventLifetimeHours, setEventLifetimeHours] = useState<number | null>(account.eventLifetimeHours);
+  const [marketingOptIn, setMarketingOptIn] = useState(account.marketingOptIn);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -28,11 +29,18 @@ export function PreferencesForm({ account }: { account: Account }) {
     setSaved(false);
     setSubmitting(true);
     try {
-      const res = await clientFetch("/api/account/settings", {
-        method: "PATCH",
-        body: JSON.stringify({ scanBothSides, eventLifetimeHours }),
-      });
-      await parseJsonOrThrow(res);
+      const [settingsRes, marketingRes] = await Promise.all([
+        clientFetch("/api/account/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ scanBothSides, eventLifetimeHours }),
+        }),
+        clientFetch("/api/account/settings/marketing-opt-in", {
+          method: "PATCH",
+          body: JSON.stringify({ marketingOptIn }),
+        }),
+      ]);
+      await parseJsonOrThrow(settingsRes);
+      await parseJsonOrThrow(marketingRes);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
@@ -85,6 +93,29 @@ export function PreferencesForm({ account }: { account: Account }) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink">
+            <Megaphone className="size-4 text-accent" strokeWidth={2} /> Marketing Updates
+          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-ink">Occasional offers and news</p>
+              <p className="text-xs text-muted">Applies to every channel currently linked to your account.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={marketingOptIn}
+              onClick={() => setMarketingOptIn((v) => !v)}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${marketingOptIn ? "bg-accent" : "bg-border"}`}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-soft transition-transform ${marketingOptIn ? "translate-x-5" : "translate-x-0"}`}
+              />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">

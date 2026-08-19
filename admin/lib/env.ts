@@ -28,7 +28,7 @@ const envSchema = z.object({
   WHATSAPP_RENEWAL_TEMPLATE_NAME: z.string().default("subscription_renewal_reminder"),
   WHATSAPP_LOW_BALANCE_TEMPLATE_NAME: z.string().default("low_coin_balance_alert"),
   RENEWAL_REMINDER_DAYS_BEFORE_EXPIRY: z.coerce.number().int().positive().default(3),
-  LOW_BALANCE_THRESHOLD: z.coerce.number().int().nonnegative().default(2),
+  LOW_BALANCE_THRESHOLD: z.coerce.number().int().nonnegative().default(10),
   NOTIFICATION_CHECK_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
 });
 

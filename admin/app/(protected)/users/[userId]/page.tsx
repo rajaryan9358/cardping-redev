@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, MessageCircle, Send } from "lucide-react";
+import { ArrowLeft, Bell, MessageCircle, ScanLine, Send } from "lucide-react";
 import { adminUsersRepo } from "../../../../lib/repositories/adminUsers.repo";
+import { env } from "../../../../lib/env";
 import { Badge } from "../../../../components/ui/Badge";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../../components/ui/Table";
 import { formatDate } from "../../../../lib/format";
@@ -11,10 +12,11 @@ export default async function UserDetailPage({ params }: { params: { userId: str
   const user = await adminUsersRepo.getUserDetail(params.userId);
   if (!user) notFound();
 
-  const [events, cards, transactions] = await Promise.all([
+  const [events, cards, transactions, interactionHistory] = await Promise.all([
     adminUsersRepo.getUserEvents(params.userId),
     adminUsersRepo.getUserCards(params.userId),
     adminUsersRepo.getUserTransactions(params.userId),
+    adminUsersRepo.getUserInteractionHistory(params.userId),
   ]);
 
   return (
@@ -55,7 +57,10 @@ export default async function UserDetailPage({ params }: { params: { userId: str
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Coin balance</p>
-          <p className="mt-2 text-3xl font-semibold text-ink">{user.effective_coin_balance}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-3xl font-semibold text-ink">{user.effective_coin_balance}</p>
+            {user.effective_coin_balance <= env.LOW_BALANCE_THRESHOLD && <Badge tone="warning">Low</Badge>}
+          </div>
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Events</p>
@@ -139,6 +144,38 @@ export default async function UserDetailPage({ params }: { params: { userId: str
           ))}
         </TableCard>
       </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-ink">Interaction history</h2>
+        <TableCard>
+          {interactionHistory.length === 0 && (
+            <p className="px-6 py-8 text-center text-sm text-muted">No activity yet.</p>
+          )}
+          {interactionHistory.map((event, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b border-border px-6 py-3.5 last:border-b-0"
+            >
+              {event.kind === "scan" ? (
+                <ScanLine className="size-4 shrink-0 text-accent" strokeWidth={2} />
+              ) : (
+                <Bell className="size-4 shrink-0 text-muted" strokeWidth={2} />
+              )}
+              <p className="flex-1 text-sm text-ink">
+                {event.kind === "scan"
+                  ? `Scanned "${event.cardName || "a card"}"${event.channel ? ` via ${event.channel}` : ""}`
+                  : `${NOTIFICATION_LABELS[event.notificationType ?? ""] ?? "Notification"} sent (${event.notificationStatus})`}
+              </p>
+              <span className="shrink-0 text-xs text-muted">{formatDate(event.at)}</span>
+            </div>
+          ))}
+        </TableCard>
+      </section>
     </div>
   );
 }
+
+const NOTIFICATION_LABELS: Record<string, string> = {
+  renewal_reminder: "Renewal reminder",
+  low_balance_alert: "Low balance alert",
+};

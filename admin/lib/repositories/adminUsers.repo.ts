@@ -197,6 +197,61 @@ async function setBlocked(userId: string, blocked: boolean): Promise<void> {
   if (error) throw error;
 }
 
+export interface InteractionEvent {
+  at: string;
+  kind: "scan" | "notification";
+  // scan
+  cardName?: string | null;
+  channel?: string | null;
+  // notification
+  notificationType?: string;
+  notificationStatus?: string;
+}
+
+const INTERACTION_HISTORY_LIMIT = 30;
+
+/** Merges two already-existing data sources into one chronological feed —
+ * no new table, just card scans (getUserCards) and notifications sent to
+ * this user (notification_log, same shape adminNotificationsRepo.
+ * listNotificationLog already returns), sorted together. */
+async function getUserInteractionHistory(userId: string): Promise<InteractionEvent[]> {
+  const [cards, { data: notifications, error }] = await Promise.all([
+    getUserCards(userId),
+    supabase
+      .from("notification_log")
+      .select("id, type, status, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(INTERACTION_HISTORY_LIMIT),
+  ]);
+  if (error) throw error;
+
+  const scanEvents: InteractionEvent[] = cards.map((c) => ({
+    at: c.created_at,
+    kind: "scan",
+    cardName: c.full_name || c.company_name,
+    channel: c.uploaded_by,
+  }));
+  const notificationEvents: InteractionEvent[] = (notifications ?? []).map((n) => ({
+    at: n.created_at,
+    kind: "notification",
+    notificationType: n.type,
+    notificationStatus: n.status,
+  }));
+
+  return [...scanEvents, ...notificationEvents]
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, INTERACTION_HISTORY_LIMIT);
+}
+
+// marketing_opt_in lives on `users` (per channel identity) even for a
+// linked account, unlike blocked_at/coin_balance — see users.repo.ts's
+// setMarketingOptIn in server/. No accountId indirection needed here.
+async function setMarketingOptIn(userId: string, optIn: boolean): Promise<void> {
+  const { error } = await supabase.from("users").update({ marketing_opt_in: optIn }).eq("id", userId);
+  if (error) throw error;
+}
+
 async function adjustCoins(userId: string, delta: number, reason: string) {
   const accountId = await resolveAccountId(userId);
   if (accountId) {
@@ -223,6 +278,8 @@ export const adminUsersRepo = {
   getUserEvents,
   getUserCards,
   getUserTransactions,
+  getUserInteractionHistory,
   setBlocked,
+  setMarketingOptIn,
   adjustCoins,
 };

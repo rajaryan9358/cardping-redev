@@ -52,6 +52,7 @@ export function UsersTable({
   expiresAfter,
   sort,
   plans,
+  lowBalanceThreshold,
 }: {
   rows: AdminUserRow[];
   total: number;
@@ -63,6 +64,7 @@ export function UsersTable({
   expiresAfter: string;
   sort: string;
   plans: Plan[];
+  lowBalanceThreshold: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -236,7 +238,12 @@ export function UsersTable({
                 {!user.wa_id && !user.telegram_id && <span className="text-xs text-muted">—</span>}
               </div>
             </Td>
-            <Td align="right">{user.effective_coin_balance}</Td>
+            <Td align="right">
+              <div className="flex items-center justify-end gap-2">
+                {user.effective_coin_balance}
+                {user.effective_coin_balance <= lowBalanceThreshold && <Badge tone="warning">Low</Badge>}
+              </div>
+            </Td>
             <Td>{user.subscription_tier || "—"}</Td>
             <Td>
               {user.effective_blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}

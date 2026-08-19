@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { env } from "../config/env";
 import { otpCodesRepo } from "../db/repositories/otpCodes.repo";
 import { usersRepo } from "../db/repositories/users.repo";
+import { channelLinksRepo } from "../db/repositories/channelLinks.repo";
 import { ChannelLink, ChannelLinkChannel } from "../types/domain";
 import * as channelLinkService from "./channelLinkService";
 import { whatsappClient } from "../integrations/whatsapp/client";
@@ -82,6 +83,41 @@ export async function consumeOnboardingToken(token: string, accountId: string): 
   }
 
   return link;
+}
+
+export interface AttachChannelResult {
+  status: "linked" | "already_linked_elsewhere" | "invalid_token";
+  linkedChannel?: ChannelLinkChannel;
+  returnUrl?: string;
+}
+
+/** Shared by the login-and-attach path (an existing account logging in via
+ * a bot-issued onboarding link) and the already-authenticated path (that
+ * link opened in a browser that already has a dashboard session) — signup
+ * has its own inline version of this same check since it's creating the
+ * account in the same breath, but both of these attach to an account that
+ * already exists. Never attaches a second identity of the same channel
+ * type to one account — see the idx_channel_links_account_channel unique
+ * index, which this is the app-layer backstop for. */
+export async function attachChannelToAccount(accountId: string, token: string): Promise<AttachChannelResult> {
+  const resolved = await resolveOnboardingToken(token);
+  if (!resolved) return { status: "invalid_token" };
+
+  const existing = await channelLinksRepo.findByAccountAndChannel(accountId, resolved.channel);
+  if (existing) return { status: "already_linked_elsewhere" };
+
+  try {
+    const link = await consumeOnboardingToken(token, accountId);
+    if (!link) return { status: "invalid_token" };
+    return {
+      status: "linked",
+      linkedChannel: link.channel,
+      returnUrl: buildChannelReturnUrl(link.channel, link.channel_identifier),
+    };
+  } catch (err: any) {
+    if (err?.code === "23505") return { status: "already_linked_elsewhere" };
+    throw err;
+  }
 }
 
 /** Where "Start scanning" on the post-signup success screen sends the user

@@ -5,10 +5,14 @@ import { NormalizedTelegramMessage } from "../../../integrations/telegram/types"
 import { ExtractedCard, UserWithEvent, VisitingCard } from "../../../types/domain";
 import { hasEnoughCoinsForScan } from "../../../services/coinService";
 import { decideScanAction, finalizeScan } from "../../../services/scanFlowService";
+import { addToBatch, BatchOutcome } from "../../../services/imageBatchBuffer";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { formatEventLifetimeRemaining } from "../../../services/eventService";
+import { childLogger } from "../../../lib/logger";
 import { Copy, formatCardSummary, sendEventPicker } from "../messages";
+
+const log = childLogger("tg-photo-handler");
 
 export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
   const { chatId } = msg;
@@ -34,27 +38,73 @@ export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWith
     return;
   }
 
-  if (action === "ask_back_photo") {
-    await usersRepo.setPendingMedia(user.user_id, msg.photoFileId, null);
+  // An active event exists, so we're clear to batch — hold this photo for
+  // a short window to see if a second one (front+back, sent together)
+  // follows, instead of committing to a single-image scan immediately.
+  addToBatch(user.user_id, { mediaId: msg.photoFileId, messageId: String(msg.messageId) }, (outcome) => {
+    handleBatchOutcome(chatId, user, outcome).catch((err) => {
+      log.error({ err, chatId }, "failed to process batched image outcome");
+    });
+  });
+}
+
+/** Runs once the batch window closes — see imageBatchBuffer.ts. One photo
+ * behaves like before (ask for the back, or finalize, depending on the
+ * scan_both_sides preference); two are always treated as front+back since
+ * sending them together is unambiguous; three or more are rejected outright
+ * rather than guessed at. */
+async function handleBatchOutcome(chatId: string, user: UserWithEvent, outcome: BatchOutcome): Promise<void> {
+  if (outcome.kind === "too_many") {
+    await telegramClient.sendMessage(chatId, Copy.tooManyImages);
+    return;
+  }
+
+  if (outcome.kind === "pair") {
+    const [frontBuffer, backBuffer] = await Promise.all([
+      telegramClient.downloadFileById(outcome.front.mediaId),
+      telegramClient.downloadFileById(outcome.back.mediaId),
+    ]);
+    await telegramClient.sendMessage(chatId, Copy.processingCard);
+    const { card, extracted } = await finalizeScan({
+      userId: user.user_id,
+      accountId: user.account_id,
+      eventId: user.active_event_id!,
+      channel: "telegram",
+      messageId: outcome.back.messageId,
+      frontImageId: outcome.front.mediaId,
+      frontImageBuffer: frontBuffer,
+      frontMimeType: "image/jpeg",
+      backImageId: outcome.back.mediaId,
+      backImageBuffer: backBuffer,
+      backMimeType: "image/jpeg",
+    });
+    await registerCardMessageRef(card.id, outcome.front.messageId);
+    await sendScanResult(chatId, Number(outcome.back.messageId), card, extracted, user);
+    return;
+  }
+
+  // Single image — same decision the old immediate path made.
+  if (decideScanAction(user) === "ask_back_photo") {
+    await usersRepo.setPendingMedia(user.user_id, outcome.image.mediaId, null);
     await usersRepo.setState(user.user_id, "awaiting_back_photo");
     await telegramClient.sendMessage(chatId, Copy.askForBackPhoto);
     return;
   }
 
-  const buffer = await telegramClient.downloadFileById(msg.photoFileId);
+  const buffer = await telegramClient.downloadFileById(outcome.image.mediaId);
   await telegramClient.sendMessage(chatId, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
     channel: "telegram",
-    messageId: String(msg.messageId),
-    frontImageId: msg.photoFileId,
+    messageId: outcome.image.messageId,
+    frontImageId: outcome.image.mediaId,
     frontImageBuffer: buffer,
     frontMimeType: "image/jpeg",
   });
 
-  await sendScanResult(chatId, msg.messageId ?? undefined, card, extracted, user);
+  await sendScanResult(chatId, Number(outcome.image.messageId), card, extracted, user);
 }
 
 /** Renders the result of a finalized scan — reused by handlePhoto's
@@ -72,12 +122,12 @@ export async function sendScanResult(
   const remaining = formatEventLifetimeRemaining(user.active_event_set_at, user.event_lifetime_hours);
   const eventLine = user.active_event_name ? `📁 Added to <b>${user.active_event_name}</b> — ${remaining}\n\n` : "";
 
-  const summaryMessageId = await telegramClient.sendMessage(chatId, eventLine + formatCardSummary(extracted), {
+  const summaryMessageId = await telegramClient.sendMessage(chatId, formatCardSummary(extracted), {
     replyToMessageId,
   });
   await registerCardMessageRef(card.id, String(summaryMessageId));
 
-  const hintMessageId = await telegramClient.sendMessage(chatId, Copy.voiceNoteHint);
+  const hintMessageId = await telegramClient.sendMessage(chatId, eventLine + Copy.voiceNoteHint);
   await registerCardMessageRef(card.id, String(hintMessageId));
 }
 

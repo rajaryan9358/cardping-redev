@@ -1,7 +1,6 @@
 import { adminSubscriptionsRepo } from "../../../lib/repositories/adminSubscriptions.repo";
 import { Tabs } from "../../../components/ui/Tabs";
 import { SubscribedUsersTable } from "./SubscribedUsersTable";
-import { SubscribedAccountsTable } from "./SubscribedAccountsTable";
 import { PlansManager } from "./PlansManager";
 import { TopUpsManager } from "./TopUpsManager";
 
@@ -19,14 +18,12 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: { page?: string; accountsPage?: string };
+  searchParams: { page?: string };
 }) {
   const page = Math.max(1, Number(searchParams.page) || 1);
-  const accountsPage = Math.max(1, Number(searchParams.accountsPage) || 1);
-  const [summary, { rows, total }, accountRows, plans, allPlans, topUps] = await Promise.all([
+  const [summary, { rows, total }, plans, allPlans, topUps] = await Promise.all([
     adminSubscriptionsRepo.getSubscriptionSummary(),
     adminSubscriptionsRepo.listSubscribedUsers(page, PAGE_SIZE),
-    adminSubscriptionsRepo.listSubscribedAccounts(accountsPage, PAGE_SIZE),
     adminSubscriptionsRepo.listPlans(),
     adminSubscriptionsRepo.listAllPlans(),
     adminSubscriptionsRepo.listAllTopUps(),
@@ -52,19 +49,6 @@ export default async function SubscriptionsPage({
             id: "users",
             label: "Subscribed users",
             content: <SubscribedUsersTable rows={rows} plans={plans} total={total} page={page} pageSize={PAGE_SIZE} />,
-          },
-          {
-            id: "accounts",
-            label: "Subscribed accounts",
-            content: (
-              <SubscribedAccountsTable
-                rows={accountRows.rows}
-                plans={plans}
-                total={accountRows.total}
-                page={accountsPage}
-                pageSize={PAGE_SIZE}
-              />
-            ),
           },
           { id: "plans", label: "Plans", content: <PlansManager plans={allPlans} /> },
           { id: "topups", label: "Top-ups", content: <TopUpsManager topUps={topUps} /> },

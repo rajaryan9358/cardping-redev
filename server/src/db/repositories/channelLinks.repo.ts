@@ -35,6 +35,17 @@ async function listByAccountId(accountId: string): Promise<ChannelLink[]> {
   return data as ChannelLink[];
 }
 
+async function findByAccountAndChannel(accountId: string, channel: ChannelLinkChannel): Promise<ChannelLink | null> {
+  const { data, error } = await supabase
+    .from("channel_links")
+    .select("*")
+    .eq("account_id", accountId)
+    .eq("channel", channel)
+    .maybeSingle();
+  if (error) throw error;
+  return data as ChannelLink | null;
+}
+
 /** Throws a Postgres unique-violation error (code 23505) if this channel
  * identifier or users row is already linked — callers should catch that
  * and surface it as "already connected to another account," not a
@@ -69,6 +80,7 @@ async function deleteById(id: string, accountId: string): Promise<void> {
 export const channelLinksRepo = {
   findByUsersId,
   findByChannelIdentifier,
+  findByAccountAndChannel,
   listByAccountId,
   create,
   deleteById,

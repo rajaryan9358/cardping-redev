@@ -19,7 +19,7 @@ export function ChangePlanModal({
   onClose: () => void;
   /** Defaults to the channel-identity action (setUserPlanAction) — pass
    * this to target an account directly instead (see
-   * SubscribedAccountsTable, for accounts with no linked channel). */
+   * SubscribedUsersTable's "account" kind rows). */
   onConfirm?: (id: string, planId: string) => Promise<void>;
 }) {
   const [selectedPlanId, setSelectedPlanId] = useState(plans[0]?.id ?? "");

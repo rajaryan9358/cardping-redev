@@ -1,5 +1,6 @@
 import "server-only";
 import { supabase } from "../supabase";
+import { env } from "../env";
 import { Paginated } from "./adminUsers.repo";
 import { AudienceFilter } from "../audienceFilter";
 
@@ -14,8 +15,6 @@ export interface AudienceUser {
   wa_id: string | null;
   telegram_chat_id: string | null;
 }
-
-const LOW_BALANCE_THRESHOLD = 2;
 
 /** Opted-in, unblocked users reachable on the given channel — the hard
  * floor every broadcast audience sits inside, no exceptions (see
@@ -42,7 +41,7 @@ async function getOptedInAudience(channel: BroadcastChannel, filter: AudienceFil
       query = query.not("plan_id", "is", null).gt("plan_expires_at", nowIso);
       break;
     case "low_balance":
-      query = query.lte("coin_balance", LOW_BALANCE_THRESHOLD);
+      query = query.lte("coin_balance", env.LOW_BALANCE_THRESHOLD);
       break;
     case "trial":
       query = query.is("plan_id", null).gt("coin_balance", 0);

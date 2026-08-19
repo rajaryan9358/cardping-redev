@@ -17,6 +17,7 @@ export const Ids = {
   accountSubscription: "account_subscription",
   accountScanBothSides: "account_scan_both_sides",
   accountEventLifetime: "account_event_lifetime",
+  accountMarketingOptIn: "account_marketing_opt_in",
 
   eventLifetime1h: "event_lifetime_1",
   eventLifetime6h: "event_lifetime_6",

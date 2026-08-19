@@ -120,6 +120,13 @@ export async function tryContinuePendingState(
         await sendEventLifetimePicker(chatId);
         return true;
       }
+      if (msg.callbackData === Ids.accountMarketingOptIn) {
+        await usersRepo.setState(user.user_id, "idle");
+        const optIn = !user.marketing_opt_in;
+        await usersRepo.setMarketingOptIn(user.user_id, optIn);
+        await telegramClient.sendMessage(chatId, Copy.marketingOptInToggled(optIn));
+        return true;
+      }
       return false;
     }
 

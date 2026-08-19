@@ -5,6 +5,7 @@ import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types"
 import { ExtractedCard, UserWithEvent, VisitingCard } from "../../../types/domain";
 import { hasEnoughCoinsForScan } from "../../../services/coinService";
 import { decideScanAction, finalizeScan } from "../../../services/scanFlowService";
+import { addToBatch, BatchOutcome } from "../../../services/imageBatchBuffer";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { formatEventLifetimeRemaining } from "../../../services/eventService";
@@ -40,27 +41,78 @@ export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWith
     return;
   }
 
-  if (action === "ask_back_photo") {
-    await usersRepo.setPendingMedia(user.user_id, msg.mediaId, null);
+  // An active event exists, so we're clear to batch — hold this photo for
+  // a short window to see if a second one (front+back, sent together)
+  // follows, instead of committing to a single-image scan immediately.
+  addToBatch(user.user_id, { mediaId: msg.mediaId, messageId: msg.waMessageId }, (outcome) => {
+    handleBatchOutcome(phoneNumberId, from, user, outcome).catch((err) => {
+      log.error({ err, from }, "failed to process batched image outcome");
+    });
+  });
+}
+
+/** Runs once the batch window closes — see imageBatchBuffer.ts. One photo
+ * behaves like before (ask for the back, or finalize, depending on the
+ * scan_both_sides preference); two are always treated as front+back since
+ * sending them together is unambiguous; three or more are rejected outright
+ * rather than guessed at. */
+async function handleBatchOutcome(
+  phoneNumberId: string,
+  from: string,
+  user: UserWithEvent,
+  outcome: BatchOutcome,
+): Promise<void> {
+  if (outcome.kind === "too_many") {
+    await whatsappClient.sendText(phoneNumberId, from, Copy.tooManyImages);
+    return;
+  }
+
+  if (outcome.kind === "pair") {
+    const [front, back] = await Promise.all([
+      whatsappClient.downloadMediaById(outcome.front.mediaId),
+      whatsappClient.downloadMediaById(outcome.back.mediaId),
+    ]);
+    await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
+    const { card, extracted } = await finalizeScan({
+      userId: user.user_id,
+      accountId: user.account_id,
+      eventId: user.active_event_id!,
+      channel: "whatsapp",
+      messageId: outcome.back.messageId,
+      frontImageId: outcome.front.mediaId,
+      frontImageBuffer: front.buffer,
+      frontMimeType: front.mimeType,
+      backImageId: outcome.back.mediaId,
+      backImageBuffer: back.buffer,
+      backMimeType: back.mimeType,
+    });
+    await registerCardMessageRef(card.id, outcome.front.messageId);
+    await sendScanResult(phoneNumberId, from, outcome.back.messageId, card, extracted, user);
+    return;
+  }
+
+  // Single image — same decision the old immediate path made.
+  if (decideScanAction(user) === "ask_back_photo") {
+    await usersRepo.setPendingMedia(user.user_id, outcome.image.mediaId, null);
     await usersRepo.setState(user.user_id, "awaiting_back_photo");
     await whatsappClient.sendText(phoneNumberId, from, Copy.askForBackPhoto);
     return;
   }
 
-  const { buffer, mimeType } = await whatsappClient.downloadMediaById(msg.mediaId);
+  const { buffer, mimeType } = await whatsappClient.downloadMediaById(outcome.image.mediaId);
   await whatsappClient.sendText(phoneNumberId, from, Copy.processingCard);
   const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
     channel: "whatsapp",
-    messageId: msg.waMessageId,
-    frontImageId: msg.mediaId,
+    messageId: outcome.image.messageId,
+    frontImageId: outcome.image.mediaId,
     frontImageBuffer: buffer,
     frontMimeType: mimeType,
   });
 
-  await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, user);
+  await sendScanResult(phoneNumberId, from, outcome.image.messageId, card, extracted, user);
 }
 
 /** Renders the result of a finalized scan — reused by handleImage's
@@ -84,7 +136,7 @@ export async function sendScanResult(
   const summaryMessageId = await whatsappClient.sendText(
     phoneNumberId,
     from,
-    eventLine + formatCardSummary(extracted),
+    formatCardSummary(extracted),
     replyToMessageId ? { replyToMessageId } : {},
   );
   if (summaryMessageId) await registerCardMessageRef(card.id, summaryMessageId);
@@ -102,7 +154,7 @@ export async function sendScanResult(
   });
   if (contactMessageId) await registerCardMessageRef(card.id, contactMessageId);
 
-  const hintMessageId = await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteHint);
+  const hintMessageId = await whatsappClient.sendText(phoneNumberId, from, eventLine + Copy.voiceNoteHint);
   if (hintMessageId) await registerCardMessageRef(card.id, hintMessageId);
 }
 

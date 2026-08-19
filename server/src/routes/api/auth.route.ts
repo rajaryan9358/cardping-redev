@@ -5,6 +5,7 @@ import { env, isGoogleDashboardLoginEnabled, isWhatsappOtpLoginEnabled } from ".
 import { accountsRepo } from "../../db/repositories/accounts.repo";
 import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
 import { sessionsRepo } from "../../db/repositories/sessions.repo";
+import { usersRepo } from "../../db/repositories/users.repo";
 import { buildDashboardGoogleAuthUrl, exchangeCodeForProfile } from "../../integrations/google/dashboardOAuth";
 import { requireSession } from "../../middleware/requireSession";
 import {
@@ -16,6 +17,7 @@ import {
 } from "../../services/authService";
 import { OtpNotConfiguredError, requestOtp, verifyOtp } from "../../services/otpService";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
+import { setMarketingOptInForAccount } from "../../services/channelLinkService";
 import * as magicLoginService from "../../services/magicLoginService";
 import { completeOnboarding } from "../../services/onboardingService";
 import { childLogger } from "../../lib/logger";
@@ -45,6 +47,11 @@ const signupSchema = z.object({
   // this account and skips the normal onboarding wizard, since arriving
   // this way already establishes everything that wizard exists to do.
   onboardToken: z.string().min(1).optional(),
+  // Consent checkbox on the signup form, checked by default. Applied to
+  // whatever channel(s) get linked in this same request (the onboardToken
+  // path) — a no-op for a channel-less organic signup, since there's
+  // nothing to set until one links (see setMarketingOptInForAccount).
+  marketingOptIn: z.boolean().default(true),
 });
 
 authRouter.post("/auth/signup", async (req, res) => {
@@ -83,6 +90,7 @@ authRouter.post("/auth/signup", async (req, res) => {
       }
     }
 
+    await setMarketingOptInForAccount(account.id, body.marketingOptIn);
     await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
     res.json({ account: sanitizeAccount(account), linkedChannel, returnUrl });
   } catch (err) {
@@ -91,7 +99,12 @@ authRouter.post("/auth/signup", async (req, res) => {
   }
 });
 
-const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+// onboardToken: set when login was reached via a bot-issued "connect your
+// account" link and the visitor chose "Log in" instead of signing up —
+// attaches the issuing channel to this account (or reports a conflict) in
+// the same request, mirroring how /auth/signup already handles it for a
+// brand-new account.
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1), onboardToken: z.string().min(1).optional() });
 
 authRouter.post("/auth/login", async (req, res) => {
   const body = parseBody(loginSchema, req, res);
@@ -109,6 +122,22 @@ authRouter.post("/auth/login", async (req, res) => {
     }
 
     await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+
+    if (body.onboardToken) {
+      const attach = await channelOnboardingService.attachChannelToAccount(account.id, body.onboardToken);
+      if (attach.status === "linked") {
+        await completeOnboarding(account.id);
+        res.json({ account: sanitizeAccount(account), linkedChannel: attach.linkedChannel, returnUrl: attach.returnUrl });
+        return;
+      }
+      if (attach.status === "already_linked_elsewhere") {
+        res.json({ account: sanitizeAccount(account), channelWarning: attach.status });
+        return;
+      }
+      // invalid_token — link expired/consumed between page load and
+      // submit; fall through to a normal login rather than blocking it.
+    }
+
     res.json({ account: sanitizeAccount(account) });
   } catch (err) {
     log.error({ err }, "login failed");
@@ -212,7 +241,7 @@ authRouter.get("/auth/magic-login", async (req, res) => {
     return;
   }
 
-  await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+  await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "magic_login");
   res.redirect(resolved.destinationPath);
 });
 
@@ -271,7 +300,13 @@ authRouter.get("/auth/me", requireSession, async (req, res) => {
   const account = req.account!;
   try {
     const channelLinks = await channelLinksRepo.listByAccountId(account.id);
-    res.json({ account: sanitizeAccount(account), channelLinks });
+    // marketing_opt_in lives per channel identity, not on the account — the
+    // dashboard shows one preference, "on" only when every linked channel
+    // agrees, so toggling it never silently surprises a channel that had
+    // opted out individually from the bot's own menu.
+    const linkedUsers = await Promise.all(channelLinks.map((link) => usersRepo.findById(link.users_id)));
+    const marketingOptIn = linkedUsers.length > 0 && linkedUsers.every((u) => u?.marketing_opt_in);
+    res.json({ account: sanitizeAccount(account), channelLinks, marketingOptIn });
   } catch (err) {
     log.error({ err }, "auth/me failed");
     res.status(500).json({ error: "failed_to_load_account" });

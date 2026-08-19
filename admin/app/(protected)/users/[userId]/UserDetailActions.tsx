@@ -4,17 +4,29 @@ import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 import { AdminUserRow } from "../../../../lib/repositories/adminUsers.repo";
-import { setUserBlockedAction } from "../actions";
+import { setUserBlockedAction, setMarketingOptInAction } from "../actions";
 import { AdjustCoinsModal } from "../AdjustCoinsModal";
 
 export function UserDetailActions({ user }: { user: AdminUserRow }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [coinsOpen, setCoinsOpen] = useState(false);
+  const [optInPending, setOptInPending] = useState(false);
 
   return (
     <div className="flex gap-2">
       <Button variant="secondary" onClick={() => setCoinsOpen(true)}>
         Adjust coins
+      </Button>
+      <Button
+        variant="secondary"
+        loading={optInPending}
+        onClick={async () => {
+          setOptInPending(true);
+          await setMarketingOptInAction(user.user_id, !user.marketing_opt_in);
+          setOptInPending(false);
+        }}
+      >
+        {user.marketing_opt_in ? "Opt out of marketing" : "Opt in to marketing"}
       </Button>
       <Button variant={user.effective_blocked_at ? "secondary" : "destructive"} onClick={() => setConfirmOpen(true)}>
         {user.effective_blocked_at ? "Unblock" : "Block"}

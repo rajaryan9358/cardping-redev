@@ -18,6 +18,7 @@ export interface Account {
   planExpiresAt: string | null;
   scanBothSides: boolean;
   eventLifetimeHours: number | null;
+  marketingOptIn: boolean;
 }
 
 export interface ChannelLink {

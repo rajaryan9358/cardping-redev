@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { z } from "zod";
 import { requireSession } from "../../middleware/requireSession";
 import { sanitizeAccount } from "../../services/authService";
 import { completeOnboarding } from "../../services/onboardingService";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
 import { childLogger } from "../../lib/logger";
+import { parseBody } from "./validate";
 
 export const onboardingRouter = Router();
 const log = childLogger("api-onboarding-route");
@@ -36,4 +38,24 @@ onboardingRouter.get("/onboarding/channel-token", async (req, res) => {
     return;
   }
   res.json(resolved);
+});
+
+const attachSchema = z.object({ onboardToken: z.string().min(1) });
+
+/** The "already logged in" onboarding path — the visitor opened a bot's
+ * ?onboard= link in a browser that already has a dashboard session, so
+ * there's no signup/login step, just an attach-or-warn decision against
+ * the current account. See channelOnboardingService.attachChannelToAccount. */
+onboardingRouter.post("/onboarding/attach", requireSession, async (req, res) => {
+  const body = parseBody(attachSchema, req, res);
+  if (!body) return;
+
+  try {
+    const attach = await channelOnboardingService.attachChannelToAccount(req.account!.id, body.onboardToken);
+    if (attach.status === "linked") await completeOnboarding(req.account!.id);
+    res.json(attach);
+  } catch (err) {
+    log.error({ err }, "channel attach failed");
+    res.status(500).json({ error: "attach_failed" });
+  }
 });

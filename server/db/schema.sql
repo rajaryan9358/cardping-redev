@@ -888,3 +888,20 @@ create index if not exists idx_card_message_refs_card_id on public.card_message_
 -- RLS policies for authorization (that's all done in application code —
 -- requireSession, resolveUsersIds, etc).
 alter table public.card_message_refs enable row level security;
+
+-- ── channel_links: one link per channel type per account ─────────────────
+-- An account can hold at most one WhatsApp and one Telegram link — without
+-- this, the dashboard's WhatsApp-OTP channel-link endpoint (and the bot's
+-- login-and-attach path) could silently let an account accumulate two
+-- WhatsApp numbers. DB-level backstop alongside the app-layer check in
+-- channelOnboardingService.attachChannelToAccount.
+create unique index if not exists idx_channel_links_account_channel on public.channel_links (account_id, channel);
+
+-- ── sessions: distinguish magic-login from a real login ──────────────────
+-- A bot-issued "Buy Credits"/"Subscribe" tap (see magicLoginService.ts)
+-- creates a session identical to a real login so the account stays
+-- authenticated on that page — but it shouldn't show up in the dashboard's
+-- Profile → Sessions ("Login History") list as if the person had actually
+-- logged in. Display-only distinction; magic-login sessions still work for
+-- auth and are still revoked by "log out everywhere".
+alter table public.sessions add column if not exists source text not null default 'login';

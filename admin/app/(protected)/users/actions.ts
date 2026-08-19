@@ -86,6 +86,19 @@ export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
   revalidatePath("/notifications");
 }
 
+export async function setMarketingOptInAction(userId: string, optIn: boolean): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.setMarketingOptIn(userId, optIn);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: optIn ? "user.marketing_opt_in" : "user.marketing_opt_out",
+    targetTable: "users",
+    targetId: userId,
+  });
+  revalidatePath("/users");
+  revalidatePath(`/users/${userId}`);
+}
+
 export async function adjustUserCoinsAction(
   userId: string,
   delta: number,

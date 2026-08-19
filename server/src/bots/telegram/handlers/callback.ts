@@ -54,7 +54,13 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
     case Ids.menuAccount: {
       await usersRepo.setState(user.user_id, "awaiting_account_settings_choice");
       const status = await getSubscriptionStatus(user);
-      await sendAccountSettingsMenu(chatId, status, Boolean(user.scan_both_sides), user.event_lifetime_hours);
+      await sendAccountSettingsMenu(
+        chatId,
+        status,
+        Boolean(user.scan_both_sides),
+        user.event_lifetime_hours,
+        Boolean(user.marketing_opt_in),
+      );
       return;
     }
 

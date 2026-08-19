@@ -33,12 +33,14 @@ export async function sendAccountSettingsMenu(
   status: SubscriptionStatus,
   scanBothSides: boolean,
   eventLifetimeHours: number | null,
+  marketingOptIn: boolean,
 ): Promise<void> {
   await telegramClient.sendMessage(chatId, Copy.accountSettingsPrompt, {
     buttonRows: [
       [{ text: `🪙 Subscription & Balance (${subscriptionLabel(status)})`, data: Ids.accountSubscription }],
       [{ text: `🔁 Scan Both Sides: ${scanBothSides ? "On" : "Off"}`, data: Ids.accountScanBothSides }],
       [{ text: `⏱️ Event Lifetime: ${eventLifetimeLabel(eventLifetimeHours)}`, data: Ids.accountEventLifetime }],
+      [{ text: `📣 Marketing Updates: ${marketingOptIn ? "On" : "Off"}`, data: Ids.accountMarketingOptIn }],
     ],
   });
 }
@@ -99,6 +101,8 @@ export const Copy = {
   askForPhoto: "Sure — send a clear photo of a business card. Good lighting helps accuracy!",
   askForBackPhoto: "Got the front — now send a photo of the <b>back</b> of the card.",
   processingCard: "📇 Got it — processing your card now…",
+  tooManyImages:
+    "🤔 Not sure how to handle more than 2 images at once — please send one photo, or two (front and back) of the same card.",
   voiceNoteHint: "Want to add a voice note about this contact? Reply to this photo or this message with a voice note.",
   voiceNoteSaved: "Transcript successfully created ✅",
   voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card or its summary message.",
@@ -121,6 +125,10 @@ export const Copy = {
   subscribeLink: (url: string) => `Pick a plan here:\n${url}`,
   viewDashboardLink: (url: string) => `See all your scanned cards on the dashboard:\n${url}`,
   scanBothSidesToggled: (on: boolean) => `Scan Both Sides is now <b>${on ? "On" : "Off"}</b>.`,
+  marketingOptInToggled: (on: boolean) =>
+    on
+      ? "Marketing Updates are now <b>On</b> — you may get occasional offers and news."
+      : "Marketing Updates are now <b>Off</b>.",
   eventLifetimeSet: (label: string) => `Event lifetime set to <b>${label}</b>.`,
   channelLinkConfirmed: "✅ This Telegram account is now connected to your CardPing dashboard login.",
   channelLinkCodeInvalid: "That connection link has expired or was already used — generate a new one from the dashboard.",

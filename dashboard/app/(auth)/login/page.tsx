@@ -1,14 +1,17 @@
 "use client";
 
-import { ArrowRight, Smartphone } from "lucide-react";
+import { ArrowRight, MessageCircle, Smartphone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
+import { useExistingSession } from "@/lib/hooks/useExistingSession";
+import { OnboardAccountPicker } from "../onboarding/OnboardAccountPicker";
 
 type LoginMode = "password" | "otp";
 
@@ -26,17 +29,42 @@ interface LoginAccount {
   onboarded_at: string | null;
 }
 
+interface LoginResponse {
+  account: LoginAccount;
+  linkedChannel?: "whatsapp" | "telegram";
+  returnUrl?: string;
+  channelWarning?: string;
+}
+
+interface ChannelContext {
+  channel: "whatsapp" | "telegram";
+  channelIdentifier: string;
+}
+
 function LoginForm() {
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<LoginMode>(searchParams.get("mode") === "otp" ? "otp" : "password");
   const router = useRouter();
   const authConfig = useAuthConfig();
+  const onboardToken = searchParams.get("onboard");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mobile, setMobile] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [channelContext, setChannelContext] = useState<ChannelContext | null>(null);
+  const [tokenExpired, setTokenExpired] = useState(false);
+  const { loading: sessionLoading, account: existingAccount } = useExistingSession(Boolean(onboardToken));
+
+  useEffect(() => {
+    if (!onboardToken) return;
+    clientFetch(`/api/onboarding/channel-token?token=${encodeURIComponent(onboardToken)}`)
+      .then((res) => parseJsonOrThrow<ChannelContext>(res))
+      .then(setChannelContext)
+      .catch(() => setTokenExpired(true));
+  }, [onboardToken]);
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,9 +73,17 @@ function LoginForm() {
     try {
       const res = await clientFetch("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, onboardToken: channelContext ? onboardToken : undefined }),
       });
-      const { account } = await parseJsonOrThrow<{ account: LoginAccount }>(res);
+      const { account, linkedChannel, returnUrl, channelWarning } = await parseJsonOrThrow<LoginResponse>(res);
+      if (linkedChannel) {
+        router.push(`/onboarding/connected?channel=${linkedChannel}&returnUrl=${encodeURIComponent(returnUrl ?? "")}`);
+        return;
+      }
+      if (channelWarning) {
+        router.push(`/onboarding/attach-result?channel=${channelContext?.channel ?? "whatsapp"}`);
+        return;
+      }
       router.push(account.onboarded_at ? "/home" : "/onboarding");
     } catch (err) {
       setError(errorMessage((err as Error).message));
@@ -74,6 +110,19 @@ function LoginForm() {
     }
   }
 
+  // Opened while a dashboard session is already active (the account-picker
+  // case) — skip the login form entirely and let the visitor attach this
+  // channel to the signed-in account, or log out first.
+  if (onboardToken && channelContext && existingAccount) {
+    return (
+      <OnboardAccountPicker accountEmail={existingAccount.email} onboardToken={onboardToken} channel={channelContext.channel} />
+    );
+  }
+
+  if (onboardToken && sessionLoading) {
+    return <div className="size-11 animate-pulse rounded-xl bg-accent-soft" aria-hidden />;
+  }
+
   return (
     <div className="w-full max-w-[420px] rounded-2xl border border-border bg-white p-8 shadow-soft">
       <div className="flex flex-col items-center gap-1 pb-8 text-center">
@@ -81,6 +130,22 @@ function LoginForm() {
         <h1 className="text-2xl font-semibold tracking-tight text-ink">CardPing</h1>
         <p className="text-sm text-muted">Sign in to your account</p>
       </div>
+
+      {channelContext && (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-border bg-success-bg px-4 py-3">
+          <MessageCircle className="size-4 shrink-0 text-success-text" strokeWidth={2} />
+          <p className="text-sm font-medium text-success-text">
+            Connecting your {channelContext.channel === "whatsapp" ? "WhatsApp" : "Telegram"}
+            {channelContext.channel === "whatsapp" ? " number" : " account"}
+          </p>
+        </div>
+      )}
+      {tokenExpired && (
+        <Banner
+          className="mb-6"
+          message="That link has expired — send another message on WhatsApp or Telegram to get a fresh one. You can still log in below."
+        />
+      )}
 
       {error && (
         <p className="mb-4 rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>
@@ -182,7 +247,10 @@ function LoginForm() {
 
       <p className="pt-8 text-center text-sm text-muted">
         Don&apos;t have an account?{" "}
-        <Link href="/signup" className="font-semibold text-accent">
+        <Link
+          href={onboardToken ? `/signup?onboard=${encodeURIComponent(onboardToken)}` : "/signup"}
+          className="font-semibold text-accent"
+        >
           Sign up
         </Link>
       </p>

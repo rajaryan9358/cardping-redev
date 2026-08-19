@@ -31,9 +31,10 @@ interface ServerChannelLink {
 interface MeResponse {
   account: ServerAccount;
   channelLinks: ServerChannelLink[];
+  marketingOptIn: boolean;
 }
 
-function mapAccount(a: ServerAccount): Account {
+function mapAccount(a: ServerAccount, marketingOptIn: boolean): Account {
   return {
     id: a.id,
     fullName: a.full_name ?? "",
@@ -48,6 +49,7 @@ function mapAccount(a: ServerAccount): Account {
     planExpiresAt: a.plan_expires_at,
     scanBothSides: a.scan_both_sides,
     eventLifetimeHours: a.event_lifetime_hours,
+    marketingOptIn,
   };
 }
 
@@ -58,8 +60,8 @@ async function fetchMe(): Promise<MeResponse> {
 }
 
 export async function getCurrentAccount(): Promise<Account> {
-  const { account } = await fetchMe();
-  return mapAccount(account);
+  const { account, marketingOptIn } = await fetchMe();
+  return mapAccount(account, marketingOptIn);
 }
 
 export async function getChannelLinks(): Promise<ChannelLink[]> {
@@ -81,13 +83,20 @@ export async function getSessions(): Promise<Session[]> {
       device_label: string | null;
       last_seen_at: string;
       isCurrent: boolean;
+      source: "login" | "magic_login";
     }[];
   };
-  return sessions.map((s) => ({
-    id: s.id,
-    deviceLabel: s.device_label ?? "Unknown device",
-    location: null,
-    lastActiveAt: s.last_seen_at,
-    isCurrent: s.isCurrent,
-  }));
+  // A bot-issued magic-login tap (Buy Credits/Subscribe) creates a real
+  // session so that page stays authenticated, but it isn't a "login" the
+  // person would recognize in a history list — display-only filter, the
+  // session itself still works and is still killed by "log out everywhere".
+  return sessions
+    .filter((s) => s.source !== "magic_login")
+    .map((s) => ({
+      id: s.id,
+      deviceLabel: s.device_label ?? "Unknown device",
+      location: null,
+      lastActiveAt: s.last_seen_at,
+      isCurrent: s.isCurrent,
+    }));
 }

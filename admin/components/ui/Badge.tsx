@@ -1,12 +1,13 @@
 import { cn } from "@/lib/cn";
 
-type BadgeTone = "success" | "danger" | "pending" | "accent";
+type BadgeTone = "success" | "danger" | "pending" | "accent" | "warning";
 
 const toneClasses: Record<BadgeTone, string> = {
   success: "bg-success-bg text-success-text",
   danger: "bg-danger-bg text-danger-text",
   pending: "bg-pending-bg text-pending-text",
   accent: "bg-accent-soft text-accent-text",
+  warning: "bg-warning-bg text-warning-text",
 };
 
 export function Badge({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
