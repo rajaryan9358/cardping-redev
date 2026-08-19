@@ -63,7 +63,7 @@ export function PreferencesForm({ account }: { account: Account }) {
             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${scanBothSides ? "bg-accent" : "bg-border"}`}
           >
             <span
-              className={`absolute top-0.5 size-5 rounded-full bg-white shadow-soft transition-transform ${scanBothSides ? "translate-x-5" : "translate-x-0.5"}`}
+              className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-soft transition-transform ${scanBothSides ? "translate-x-5" : "translate-x-0"}`}
             />
           </button>
         </div>

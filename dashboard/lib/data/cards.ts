@@ -20,6 +20,7 @@ interface ServerCard {
   facebook: string | null;
   instagram: string | null;
   image_public_url: string | null;
+  back_image_public_url: string | null;
   voice_note_public_url: string | null;
   transcribed_note: string | null;
   tags: string[];
@@ -48,7 +49,7 @@ function mapCard(c: ServerCard): VisitingCard {
     facebook: c.facebook,
     instagram: c.instagram,
     imageUrl: c.image_public_url,
-    imageBackUrl: null, // no second-image column exists yet — see docs/DASHBOARD_PLAN.md gaps
+    imageBackUrl: c.back_image_public_url,
     voiceNoteUrl: c.voice_note_public_url,
     transcribedNote: c.transcribed_note,
     tags: c.tags,

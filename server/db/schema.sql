@@ -864,3 +864,27 @@ from
   left join public.visiting_cards vc on vc.id = u.active_visiting_card_id
   left join public.channel_links cl on cl.users_id = u.id
   left join public.accounts a on a.id = cl.account_id;
+
+-- ── card_message_refs ───────────────────────────────────────────────────
+-- Every message a card's result touches (the front photo, the back photo,
+-- the "add a voice note" hint, the summary/contact-details message) —
+-- lets a voice note replying to ANY of them find the right card, instead
+-- of only the single message visiting_cards.message_id happens to hold.
+create table if not exists public.card_message_refs (
+  id uuid not null default gen_random_uuid(),
+  card_id uuid not null references public.visiting_cards (id) on delete cascade,
+  message_id text not null,
+  created_at timestamptz not null default now(),
+  constraint card_message_refs_pkey primary key (id)
+);
+
+create unique index if not exists idx_card_message_refs_message_id on public.card_message_refs (message_id);
+create index if not exists idx_card_message_refs_card_id on public.card_message_refs using btree (card_id);
+
+-- No policies — every app in this repo talks to Supabase only through the
+-- service-role key (server/, admin/), which bypasses RLS regardless. This
+-- just closes off anon/authenticated-key access by default rather than
+-- leaving it open, matching no table in this schema having ever relied on
+-- RLS policies for authorization (that's all done in application code —
+-- requireSession, resolveUsersIds, etc).
+alter table public.card_message_refs enable row level security;

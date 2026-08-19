@@ -14,7 +14,6 @@ export const Ids = {
   eventPickerNew: "event_pick_new",
   eventPickPrefix: "event_pick:",
 
-  accountConnectGmail: "account_connect_gmail",
   accountSubscription: "account_subscription",
   accountScanBothSides: "account_scan_both_sides",
   accountEventLifetime: "account_event_lifetime",
@@ -25,7 +24,4 @@ export const Ids = {
   eventLifetime24h: "event_lifetime_24",
   eventLifetime48h: "event_lifetime_48",
   eventLifetimeAlways: "event_lifetime_always",
-
-  emailReviewApprove: "email_review_approve",
-  emailReviewChange: "email_review_change",
 } as const;

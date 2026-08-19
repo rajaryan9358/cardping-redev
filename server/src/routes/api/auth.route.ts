@@ -190,6 +190,15 @@ authRouter.get("/auth/google/callback", async (req, res) => {
  * token itself, sent to the account's own linked channel, is the proof of
  * ownership, same trust model as the channel-onboarding link. */
 authRouter.get("/auth/magic-login", async (req, res) => {
+  // WhatsApp/Telegram fetch the link server-side to build a chat preview
+  // before the user ever taps it — don't let that silently burn the
+  // single-use token. A harmless placeholder page satisfies the preview
+  // fetch; the token stays valid for the real tap.
+  if (magicLoginService.isLikelyLinkPreviewBot(req.header("user-agent"))) {
+    res.send("<!doctype html><title>CardPing</title>");
+    return;
+  }
+
   const token = typeof req.query.token === "string" ? req.query.token : undefined;
   const resolved = token ? await magicLoginService.resolveAndConsumeMagicLoginToken(token) : null;
   if (!resolved) {

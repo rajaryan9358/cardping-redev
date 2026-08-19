@@ -1,4 +1,5 @@
 import { visitingCardsRepo } from "../db/repositories/visitingCards.repo";
+import { cardMessageRefsRepo } from "../db/repositories/cardMessageRefs.repo";
 import { extractCardFromImages } from "../integrations/openai/vision";
 import { supabaseStorage } from "../integrations/storage/supabaseStorage";
 import { Channel, ExtractedCard, VisitingCard } from "../types/domain";
@@ -72,6 +73,14 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
   return { card, extracted };
 }
 
+/** Registers a message as a valid voice-note reply-anchor for this card —
+ * called for the front photo (legacy column, kept for old cards), the back
+ * photo, the "add a voice note" hint, and the summary message. See
+ * cardMessageRefs.repo.ts and the audio/voice handlers. */
 export async function linkCardToInboundMessage(cardId: string, messageId: string): Promise<void> {
-  await visitingCardsRepo.setMessageId(cardId, messageId);
+  await Promise.all([visitingCardsRepo.setMessageId(cardId, messageId), cardMessageRefsRepo.addRef(cardId, messageId)]);
+}
+
+export async function registerCardMessageRef(cardId: string, messageId: string): Promise<void> {
+  await cardMessageRefsRepo.addRef(cardId, messageId);
 }

@@ -4,6 +4,7 @@ import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
 import { whatsappClient } from "../../integrations/whatsapp/client";
 import { childLogger } from "../../lib/logger";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
+import { effectiveActiveEventName } from "../../services/eventService";
 import { handleImage } from "./handlers/image";
 import { handleAudio } from "./handlers/audio";
 import { handleText } from "./handlers/text";
@@ -65,7 +66,7 @@ export async function routeWhatsAppWebhook(body: unknown): Promise<void> {
         message.phoneNumberId,
         message.from,
         "Not sure how to handle that — here's what I can do:",
-        user.active_event_name,
+        effectiveActiveEventName(user),
       );
   }
 }

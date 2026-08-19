@@ -47,10 +47,9 @@ depends on.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `OPENAI_API_KEY` | Yes | Used for card extraction, voice transcription, and email copywriting |
-| `OPENAI_VISION_MODEL` | No (default `gpt-4o`) | Model used to extract card fields from a photo |
+| `OPENAI_API_KEY` | Yes | Used for card extraction and voice transcription |
+| `OPENAI_VISION_MODEL` | No (default `gpt-4o`) | Model used to extract card fields from a photo (both sides in one call when scan_both_sides is on) |
 | `OPENAI_TRANSCRIBE_MODEL` | No (default `whisper-1`) | Model used to transcribe voice notes |
-| `OPENAI_EMAIL_MODEL` | No (default `gpt-4o`) | Model used to draft follow-up emails |
 
 ## Coins / billing
 
@@ -70,7 +69,7 @@ disabled-with-a-tooltip instead of a dead click.
 |---|---|---|
 | `SESSION_COOKIE_NAME` | No (default `cardping_session`) | Distinct from admin/'s `cardping_admin_session` — the two apps' sessions never collide |
 | `SESSION_TTL_HOURS` | No (default `720`, i.e. 30 days) | |
-| `GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI` | For Google login | A **second** "Authorized redirect URI" on the same Google OAuth client used above for Gmail — must be distinct from `GOOGLE_OAUTH_REDIRECT_URI`, e.g. `https://your-domain/api/auth/google/callback` |
+| `GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI` | For Google login | An "Authorized redirect URI" on the `GOOGLE_CLIENT_ID` client below, e.g. `https://your-domain/api/auth/google/callback` |
 | `WHATSAPP_LOGIN_OTP_TEMPLATE_NAME` | For WhatsApp OTP | Name of a Meta Business Manager **Authentication**-category template, approved for sending login codes |
 | `WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME` | No | Defaults to `WHATSAPP_LOGIN_OTP_TEMPLATE_NAME` — only set separately if Meta's review requires a distinct template for channel-linking vs. login |
 | `TELEGRAM_BOT_USERNAME` | For Telegram channel linking | The bot's public `@username`, without the `@` — used to build the `t.me/<bot>?start=<code>` deep link |
@@ -79,19 +78,17 @@ disabled-with-a-tooltip instead of a dead click.
 `dashboard/`'s own env (`dashboard/.env.example`) only needs `SERVER_API_BASE_URL` — everything
 else above lives in `server/.env` since `server/` is what actually calls Meta/Google/Cashfree.
 
-## Google OAuth (Gmail follow-up drafts)
+## Google OAuth (dashboard/ "Continue with Google" login)
 
-Optional as a group — leave both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` blank and the
-Gmail follow-up feature is simply skipped (no draft email is offered after a scan; "Connect
-Gmail" in Account Settings tells the user it isn't configured).
+Optional as a group — leave both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` blank and Google
+login is simply disabled (the dashboard renders the button disabled-with-a-tooltip instead of a
+dead click, same as WhatsApp OTP login above).
 
 | Variable | Required | Notes |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For this feature | From a Google Cloud OAuth 2.0 Client ID (type "Web application") with the Gmail API enabled |
-| `GOOGLE_OAUTH_REDIRECT_URI` | No | Defaults to `${PUBLIC_BASE_URL}/oauth/google/callback`. Must exactly match an "Authorized redirect URI" on the OAuth client — only set this explicitly if you need it to differ from the default |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For this feature | From a Google Cloud OAuth 2.0 Client ID (type "Web application") |
 
-Required scope: `https://www.googleapis.com/auth/gmail.compose` (drafts only — this app never
-sends email on the user's behalf without them reviewing it first).
+See `GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI` above for the redirect URI itself.
 
 ## Cashfree Payment Links (coin top-up)
 

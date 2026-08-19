@@ -3,7 +3,8 @@ import { usersRepo } from "../../../db/repositories/users.repo";
 import { NormalizedTelegramMessage } from "../../../integrations/telegram/types";
 import { UserWithEvent } from "../../../types/domain";
 import * as channelLinkService from "../../../services/channelLinkService";
-import { Copy, sendMainMenu } from "../messages";
+import { effectiveActiveEventName } from "../../../services/eventService";
+import { Copy, sendMainMenu, sendEventPicker } from "../messages";
 import { Ids } from "../ids";
 
 export async function handleText(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
@@ -40,25 +41,30 @@ export async function handleText(msg: NormalizedTelegramMessage, user: UserWithE
   }
 
   if (text?.trim() === "/setevent") {
-    if (user.active_event_name) {
-      await telegramClient.sendMessage(chatId, Copy.currentEventChangePrompt(user.active_event_name), {
-        buttons: [
-          { text: "Change it", data: Ids.eventChangeYes },
-          { text: "Keep it", data: Ids.eventChangeNo },
-        ],
-      });
+    const activeEventName = effectiveActiveEventName(user);
+    if (activeEventName) {
+      await telegramClient.sendMessage(
+        chatId,
+        Copy.currentEventChangePrompt(activeEventName, user.active_event_set_at, user.event_lifetime_hours),
+        {
+          buttons: [
+            { text: "Change it", data: Ids.eventChangeYes },
+            { text: "Keep it", data: Ids.eventChangeNo },
+          ],
+        },
+      );
       return;
     }
-    await usersRepo.setState(user.user_id, "awaiting_event_name");
-    await telegramClient.sendMessage(chatId, Copy.askNewEventName);
+    await usersRepo.setState(user.user_id, "awaiting_event_choice");
+    await sendEventPicker(chatId, user.user_id);
     return;
   }
 
   if (text?.trim() === "/start" || text?.trim() === "/menu") {
     const name = user.full_name ? `, ${user.full_name.split(" ")[0]}` : "";
-    await sendMainMenu(chatId, `Hi${name} 👋 What would you like to do?`, user.active_event_name);
+    await sendMainMenu(chatId, `Hi${name} 👋 What would you like to do?`, effectiveActiveEventName(user));
     return;
   }
 
-  await sendMainMenu(chatId, "Not sure how to handle that — here's what I can do:", user.active_event_name);
+  await sendMainMenu(chatId, "Not sure how to handle that — here's what I can do:", effectiveActiveEventName(user));
 }

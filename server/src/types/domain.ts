@@ -11,7 +11,6 @@ export type UserState =
   | "idle"
   | "awaiting_event_name"
   | "awaiting_account_settings_choice"
-  | "awaiting_email_review"
   // A photo was received with no active event (or the active one expired) —
   // waiting on an event_pick:<id>/event_pick:new choice. See
   // scanFlowService.ts; the pending media id lives on
@@ -185,26 +184,6 @@ export interface Transaction {
   status: "pending" | "completed" | "failed";
   cashfree_link_id: string | null;
   stripe_id: string | null;
-  created_at: string;
-}
-
-export interface GmailTokens {
-  id: string;
-  user_id: string | null;
-  refresh_token: string;
-  client_id: string | null;
-  client_secret: string | null;
-  email_address: string | null;
-  created_at: string;
-}
-
-export interface TempEmail {
-  id: string;
-  to: string;
-  from: string | null;
-  subject: string | null;
-  body: string | null;
-  visiting_card_id: string | null;
   created_at: string;
 }
 

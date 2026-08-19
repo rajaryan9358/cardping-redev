@@ -4,9 +4,7 @@ import { accountsRepo } from "../../../db/repositories/accounts.repo";
 import { setActiveEvent, setActiveEventById } from "../../../services/eventService";
 import { finalizeScan } from "../../../services/scanFlowService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
-import { sendApprovedDraft, GmailNotConnectedError } from "../../../services/emailFollowUpService";
-import { buildGoogleAuthUrl } from "../../../integrations/gmail/oauth";
-import { isGmailFollowUpEnabled } from "../../../config/env";
+import { registerCardMessageRef } from "../../../services/cardService";
 import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types";
 import { UserWithEvent } from "../../../types/domain";
 import { resumeScanAfterEventSet, sendScanResult } from "./image";
@@ -41,7 +39,7 @@ export async function tryContinuePendingState(
       if (user.pending_front_media_id) {
         await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
       } else {
-        await whatsappClient.sendText(phoneNumberId, from, Copy.eventConfirmed(event.name));
+        await whatsappClient.sendText(phoneNumberId, from, Copy.eventConfirmed(event.name, user.event_lifetime_hours));
       }
       return true;
     }
@@ -54,12 +52,12 @@ export async function tryContinuePendingState(
       }
       if (msg.buttonId?.startsWith(Ids.eventPickPrefix)) {
         const eventId = msg.buttonId.slice(Ids.eventPickPrefix.length);
+        const eventName = await setActiveEventById(user.user_id, eventId);
         await usersRepo.setState(user.user_id, "idle");
-        await setActiveEventById(user.user_id, eventId);
         if (user.pending_front_media_id) {
           await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
         } else {
-          await whatsappClient.sendText(phoneNumberId, from, "Switched to that event.");
+          await whatsappClient.sendText(phoneNumberId, from, Copy.eventSwitched(eventName, user.event_lifetime_hours));
         }
         return true;
       }
@@ -74,7 +72,7 @@ export async function tryContinuePendingState(
         whatsappClient.downloadMediaById(user.pending_front_media_id),
         whatsappClient.downloadMediaById(msg.mediaId),
       ]);
-      const { card, extracted, draft } = await finalizeScan({
+      const { card, extracted } = await finalizeScan({
         userId: user.user_id,
         accountId: user.account_id,
         eventId: user.active_event_id!,
@@ -86,10 +84,9 @@ export async function tryContinuePendingState(
         backImageId: msg.mediaId,
         backImageBuffer: back.buffer,
         backMimeType: back.mimeType,
-        requester: { fullName: user.full_name, email: user.email },
-        activeEventName: user.active_event_name,
       });
-      await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, draft);
+      await registerCardMessageRef(card.id, msg.waMessageId);
+      await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, user);
       return true;
     }
 
@@ -111,20 +108,6 @@ export async function tryContinuePendingState(
         await sendEventLifetimePicker(phoneNumberId, from);
         return true;
       }
-      if (msg.buttonId === Ids.accountConnectGmail) {
-        await usersRepo.setState(user.user_id, "idle");
-        if (!isGmailFollowUpEnabled) {
-          await whatsappClient.sendText(
-            phoneNumberId,
-            from,
-            "Gmail follow-up isn't configured on this server yet.",
-          );
-          return true;
-        }
-        const authUrl = buildGoogleAuthUrl(user.user_id);
-        await whatsappClient.sendText(phoneNumberId, from, Copy.gmailNotConnected(authUrl));
-        return true;
-      }
       return false;
     }
 
@@ -135,31 +118,6 @@ export async function tryContinuePendingState(
       await accountsRepo.update(user.account_id!, { event_lifetime_hours: hours });
       await whatsappClient.sendText(phoneNumberId, from, Copy.eventLifetimeSet(eventLifetimeLabel(hours)));
       return true;
-    }
-
-    case "awaiting_email_review": {
-      const cardId = user.active_visiting_card_id;
-      if (msg.buttonId === Ids.emailReviewChange) {
-        await usersRepo.setState(user.user_id, "idle");
-        await whatsappClient.sendText(phoneNumberId, from, Copy.emailDraftDismissed);
-        return true;
-      }
-      if (msg.buttonId === Ids.emailReviewApprove && cardId) {
-        await usersRepo.setState(user.user_id, "idle");
-        try {
-          await sendApprovedDraft(user.user_id, cardId);
-          await whatsappClient.sendText(phoneNumberId, from, Copy.emailDraftSaved);
-        } catch (err) {
-          if (err instanceof GmailNotConnectedError) {
-            const authUrl = buildGoogleAuthUrl(user.user_id);
-            await whatsappClient.sendText(phoneNumberId, from, Copy.gmailNotConnected(authUrl));
-          } else {
-            throw err;
-          }
-        }
-        return true;
-      }
-      return false;
     }
 
     default:

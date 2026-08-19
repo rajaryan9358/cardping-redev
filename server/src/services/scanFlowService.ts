@@ -1,9 +1,7 @@
 import { usersRepo } from "../db/repositories/users.repo";
-import { isGmailFollowUpEnabled } from "../config/env";
-import { Channel, ExtractedCard, TempEmail, UserWithEvent, VisitingCard } from "../types/domain";
+import { Channel, ExtractedCard, UserWithEvent, VisitingCard } from "../types/domain";
 import { processCardImage, linkCardToInboundMessage } from "./cardService";
 import { chargeForCardScan } from "./coinService";
-import { prepareFollowUpDraft } from "./emailFollowUpService";
 import { isEventExpired } from "./eventService";
 
 export type ScanAction = "ask_event" | "ask_back_photo" | "finalize";
@@ -30,21 +28,18 @@ export interface FinalizeScanInput {
   backImageId?: string;
   backImageBuffer?: Buffer;
   backMimeType?: string;
-  requester: { fullName: string | null; email: string | null };
-  activeEventName: string | null;
 }
 
 export interface FinalizeScanResult {
   card: VisitingCard;
   extracted: ExtractedCard;
-  draft: TempEmail | null;
 }
 
-/** The persist/charge/draft-preparation tail every scan goes through,
- * whether it finalized immediately or was resumed after the event picker /
- * back photo — channel-specific message rendering (summary text, contact
- * card, gmail-review buttons) stays in each bot's own handler, which calls
- * this first and then sends based on what it returns. */
+/** The persist/charge tail every scan goes through, whether it finalized
+ * immediately or was resumed after the event picker / back photo —
+ * channel-specific message rendering (summary text, contact card) stays in
+ * each bot's own handler, which calls this first and then sends based on
+ * what it returns. */
 export async function finalizeScan(input: FinalizeScanInput): Promise<FinalizeScanResult> {
   const { card, extracted } = await processCardImage({
     userId: input.userId,
@@ -65,10 +60,5 @@ export async function finalizeScan(input: FinalizeScanInput): Promise<FinalizeSc
     usersRepo.setPendingMedia(input.userId, null, null),
   ]);
 
-  if (!isGmailFollowUpEnabled) return { card, extracted, draft: null };
-
-  const draft = await prepareFollowUpDraft(input.requester, card, extracted, input.activeEventName, null);
-  if (draft) await usersRepo.setState(input.userId, "awaiting_email_review");
-
-  return { card, extracted, draft };
+  return { card, extracted };
 }

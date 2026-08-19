@@ -1,14 +1,14 @@
 import { telegramClient } from "../../../integrations/telegram/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
+import { registerCardMessageRef } from "../../../services/cardService";
 import { NormalizedTelegramMessage } from "../../../integrations/telegram/types";
-import { ExtractedCard, TempEmail, UserWithEvent, VisitingCard } from "../../../types/domain";
+import { ExtractedCard, UserWithEvent, VisitingCard } from "../../../types/domain";
 import { hasEnoughCoinsForScan } from "../../../services/coinService";
 import { decideScanAction, finalizeScan } from "../../../services/scanFlowService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
-import { isGmailFollowUpEnabled } from "../../../config/env";
+import { formatEventLifetimeRemaining } from "../../../services/eventService";
 import { Copy, formatCardSummary, sendEventPicker } from "../messages";
-import { Ids } from "../ids";
 
 export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
   const { chatId } = msg;
@@ -42,7 +42,7 @@ export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWith
   }
 
   const buffer = await telegramClient.downloadFileById(msg.photoFileId);
-  const { card, extracted, draft } = await finalizeScan({
+  const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
@@ -51,36 +51,33 @@ export async function handlePhoto(msg: NormalizedTelegramMessage, user: UserWith
     frontImageId: msg.photoFileId,
     frontImageBuffer: buffer,
     frontMimeType: "image/jpeg",
-    requester: { fullName: user.full_name, email: user.email },
-    activeEventName: user.active_event_name,
   });
 
-  await sendScanResult(chatId, msg.messageId ?? undefined, card, extracted, draft);
+  await sendScanResult(chatId, msg.messageId ?? undefined, card, extracted, user);
 }
 
 /** Renders the result of a finalized scan — reused by handlePhoto's
  * immediate path and stateContinuation.ts's resumed-after-event/back-photo
- * paths, so the two never drift. */
+ * paths, so the two never drift. Also registers the summary message as a
+ * voice-note reply anchor, alongside the front/back photo already
+ * registered by finalizeScan/the back-photo handler. */
 export async function sendScanResult(
   chatId: string,
   replyToMessageId: number | undefined,
   card: VisitingCard,
   extracted: ExtractedCard,
-  draft: TempEmail | null,
+  user: UserWithEvent,
 ): Promise<void> {
-  await telegramClient.sendMessage(chatId, formatCardSummary(extracted), {
-    replyToMessageId: replyToMessageId ?? undefined,
-  });
-  await telegramClient.sendMessage(chatId, Copy.voiceNoteHint);
+  const remaining = formatEventLifetimeRemaining(user.active_event_set_at, user.event_lifetime_hours);
+  const eventLine = user.active_event_name ? `📁 Added to <b>${user.active_event_name}</b> — ${remaining}\n\n` : "";
 
-  if (!isGmailFollowUpEnabled || !draft) return;
-
-  await telegramClient.sendMessage(chatId, Copy.emailReviewPrompt(draft.subject ?? "", draft.body ?? ""), {
-    buttons: [
-      { text: "Save to Gmail", data: Ids.emailReviewApprove },
-      { text: "Skip", data: Ids.emailReviewChange },
-    ],
+  const summaryMessageId = await telegramClient.sendMessage(chatId, eventLine + formatCardSummary(extracted), {
+    replyToMessageId,
   });
+  await registerCardMessageRef(card.id, String(summaryMessageId));
+
+  const hintMessageId = await telegramClient.sendMessage(chatId, Copy.voiceNoteHint);
+  await registerCardMessageRef(card.id, String(hintMessageId));
 }
 
 /** Called once an event has just been set (typed name or picked from the
@@ -100,7 +97,7 @@ export async function resumeScanAfterEventSet(chatId: string, userId: string): P
   }
 
   const buffer = await telegramClient.downloadFileById(user.pending_front_media_id);
-  const { card, extracted, draft } = await finalizeScan({
+  const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
@@ -109,19 +106,17 @@ export async function resumeScanAfterEventSet(chatId: string, userId: string): P
     frontImageId: user.pending_front_media_id,
     frontImageBuffer: buffer,
     frontMimeType: "image/jpeg",
-    requester: { fullName: user.full_name, email: user.email },
-    activeEventName: user.active_event_name,
   });
 
-  await sendScanResult(chatId, undefined, card, extracted, draft);
+  await sendScanResult(chatId, undefined, card, extracted, user);
 }
 
 async function sendOutOfCoins(chatId: string, user: UserWithEvent): Promise<void> {
   const status = await getSubscriptionStatus(user);
-  const topUpUrl = await createMagicLoginLink(user.account_id!, "/subscription/topup");
+  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup");
 
   if (status.tone === "none" || status.tone === "expired") {
-    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscription");
+    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe");
     await telegramClient.sendMessage(chatId, Copy.outOfCoinsNoPlan(subscribeUrl, topUpUrl));
     return;
   }

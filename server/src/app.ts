@@ -5,7 +5,6 @@ import { logger } from "./lib/logger";
 import { healthRouter } from "./routes/health.route";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.route";
 import { telegramWebhookRouter } from "./routes/telegramWebhook.route";
-import { googleOAuthRouter } from "./routes/googleOAuth.route";
 import { cashfreeWebhookRouter } from "./routes/cashfreeWebhook.route";
 import { apiRouter } from "./routes/api";
 
@@ -33,7 +32,6 @@ export function createApp(): Express {
   app.use(healthRouter);
   app.use(whatsappWebhookRouter);
   app.use(telegramWebhookRouter);
-  app.use(googleOAuthRouter);
   app.use(cashfreeWebhookRouter);
   app.use("/api", apiRouter);
 

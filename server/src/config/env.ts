@@ -24,14 +24,12 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_VISION_MODEL: z.string().default("gpt-4o"),
   OPENAI_TRANSCRIBE_MODEL: z.string().default("whisper-1"),
-  OPENAI_EMAIL_MODEL: z.string().default("gpt-4o"),
 
   COINS_PER_CARD_SCAN: z.coerce.number().int().positive().default(1),
   COINS_STARTER_BALANCE: z.coerce.number().int().nonnegative().default(5),
 
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
-  GOOGLE_OAUTH_REDIRECT_URI: z.string().optional().default(""),
 
   CASHFREE_CLIENT_ID: z.string().optional().default(""),
   CASHFREE_CLIENT_SECRET: z.string().optional().default(""),
@@ -45,9 +43,6 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().default("cardping_session"),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(24 * 30),
 
-  // Separate OAuth client callback from GOOGLE_OAUTH_REDIRECT_URI above,
-  // which is the unrelated Gmail-follow-up-draft feature's callback — same
-  // Google Cloud client, different scope/redirect, must not collide.
   GOOGLE_DASHBOARD_OAUTH_REDIRECT_URI: z.string().optional().default(""),
 
   // Unset until a Meta Business Manager Authentication template is created
@@ -68,7 +63,6 @@ const envSchema = z.object({
 });
 
 type Env = z.infer<typeof envSchema> & {
-  GOOGLE_OAUTH_REDIRECT_URI: string;
   WHATSAPP_CHANNEL_LINK_OTP_TEMPLATE_NAME: string;
   DASHBOARD_BASE_URL: string;
 };
@@ -85,8 +79,6 @@ function loadEnv(): Env {
   const data = parsed.data;
   return {
     ...data,
-    GOOGLE_OAUTH_REDIRECT_URI:
-      data.GOOGLE_OAUTH_REDIRECT_URI || `${data.PUBLIC_BASE_URL}/oauth/google/callback`,
     // One Authentication template can usually serve both login and
     // channel-link OTPs — only set the second env var if Meta's review
     // ends up requiring a distinct template per use case.
@@ -97,10 +89,6 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
-
-export const isGmailFollowUpEnabled = Boolean(
-  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET,
-);
 
 export const isCashfreeEnabled = Boolean(
   env.CASHFREE_CLIENT_ID && env.CASHFREE_CLIENT_SECRET,

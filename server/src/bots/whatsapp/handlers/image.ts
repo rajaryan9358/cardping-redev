@@ -1,15 +1,15 @@
 import { whatsappClient } from "../../../integrations/whatsapp/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
+import { registerCardMessageRef } from "../../../services/cardService";
 import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types";
-import { ExtractedCard, TempEmail, UserWithEvent, VisitingCard } from "../../../types/domain";
+import { ExtractedCard, UserWithEvent, VisitingCard } from "../../../types/domain";
 import { hasEnoughCoinsForScan } from "../../../services/coinService";
 import { decideScanAction, finalizeScan } from "../../../services/scanFlowService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
-import { isGmailFollowUpEnabled } from "../../../config/env";
+import { formatEventLifetimeRemaining } from "../../../services/eventService";
 import { childLogger } from "../../../lib/logger";
 import { Copy, formatCardSummary, sendEventPicker } from "../messages";
-import { Ids } from "../ids";
 
 const log = childLogger("wa-image-handler");
 
@@ -48,7 +48,7 @@ export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWith
   }
 
   const { buffer, mimeType } = await whatsappClient.downloadMediaById(msg.mediaId);
-  const { card, extracted, draft } = await finalizeScan({
+  const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
@@ -57,33 +57,38 @@ export async function handleImage(msg: NormalizedWhatsAppMessage, user: UserWith
     frontImageId: msg.mediaId,
     frontImageBuffer: buffer,
     frontMimeType: mimeType,
-    requester: { fullName: user.full_name, email: user.email },
-    activeEventName: user.active_event_name,
   });
 
-  await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, draft);
+  await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, user);
 }
 
 /** Renders the result of a finalized scan — reused by handleImage's
  * immediate path (has a real inbound message to thread the summary under)
  * and stateContinuation.ts's resumed-after-event/back-photo paths (no
- * natural message to reply to, so replyToMessageId is null there). */
+ * natural message to reply to, so replyToMessageId is null there). Also
+ * registers the summary and contact-card messages as voice-note reply
+ * anchors, alongside the front/back photo already registered by
+ * finalizeScan/the back-photo handler. */
 export async function sendScanResult(
   phoneNumberId: string,
   from: string,
   replyToMessageId: string | null,
   card: VisitingCard,
   extracted: ExtractedCard,
-  draft: TempEmail | null,
+  user: UserWithEvent,
 ): Promise<void> {
-  await whatsappClient.sendText(
+  const remaining = formatEventLifetimeRemaining(user.active_event_set_at, user.event_lifetime_hours);
+  const eventLine = user.active_event_name ? `📁 Added to *${user.active_event_name}* — ${remaining}\n\n` : "";
+
+  const summaryMessageId = await whatsappClient.sendText(
     phoneNumberId,
     from,
-    formatCardSummary(extracted),
+    eventLine + formatCardSummary(extracted),
     replyToMessageId ? { replyToMessageId } : {},
   );
+  if (summaryMessageId) await registerCardMessageRef(card.id, summaryMessageId);
 
-  await whatsappClient.sendContactCard(phoneNumberId, from, {
+  const contactMessageId = await whatsappClient.sendContactCard(phoneNumberId, from, {
     formattedName: extracted.person_name || extracted.company_name,
     firstName: (extracted.person_name || extracted.company_name).split(" ")[0] ?? "",
     lastName: (extracted.person_name || extracted.company_name).split(" ").slice(1).join(" "),
@@ -94,20 +99,10 @@ export async function sendScanResult(
     waId: extracted.primary_phone.replace(/\D/g, ""),
     website: extracted.website,
   });
+  if (contactMessageId) await registerCardMessageRef(card.id, contactMessageId);
 
-  await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteHint);
-
-  if (!isGmailFollowUpEnabled || !draft) return;
-
-  await whatsappClient.sendButtons(
-    phoneNumberId,
-    from,
-    Copy.emailReviewPrompt(draft.subject ?? "", draft.body ?? ""),
-    [
-      { id: Ids.emailReviewApprove, title: "Save to Gmail" },
-      { id: Ids.emailReviewChange, title: "Skip" },
-    ],
-  );
+  const hintMessageId = await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteHint);
+  if (hintMessageId) await registerCardMessageRef(card.id, hintMessageId);
 }
 
 /** Called once an event has just been set (typed name or picked from the
@@ -127,7 +122,7 @@ export async function resumeScanAfterEventSet(phoneNumberId: string, from: strin
   }
 
   const { buffer, mimeType } = await whatsappClient.downloadMediaById(user.pending_front_media_id);
-  const { card, extracted, draft } = await finalizeScan({
+  const { card, extracted } = await finalizeScan({
     userId: user.user_id,
     accountId: user.account_id,
     eventId: user.active_event_id!,
@@ -136,19 +131,17 @@ export async function resumeScanAfterEventSet(phoneNumberId: string, from: strin
     frontImageId: user.pending_front_media_id,
     frontImageBuffer: buffer,
     frontMimeType: mimeType,
-    requester: { fullName: user.full_name, email: user.email },
-    activeEventName: user.active_event_name,
   });
 
-  await sendScanResult(phoneNumberId, from, null, card, extracted, draft);
+  await sendScanResult(phoneNumberId, from, null, card, extracted, user);
 }
 
 async function sendOutOfCoins(phoneNumberId: string, from: string, user: UserWithEvent): Promise<void> {
   const status = await getSubscriptionStatus(user);
-  const topUpUrl = await createMagicLoginLink(user.account_id!, "/subscription/topup");
+  const topUpUrl = await createMagicLoginLink(user.account_id!, "/topup");
 
   if (status.tone === "none" || status.tone === "expired") {
-    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscription");
+    const subscribeUrl = await createMagicLoginLink(user.account_id!, "/subscribe");
     await whatsappClient.sendText(phoneNumberId, from, Copy.outOfCoinsNoPlan(subscribeUrl, topUpUrl));
     return;
   }

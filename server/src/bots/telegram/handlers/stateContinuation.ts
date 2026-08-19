@@ -4,9 +4,7 @@ import { accountsRepo } from "../../../db/repositories/accounts.repo";
 import { setActiveEvent, setActiveEventById } from "../../../services/eventService";
 import { finalizeScan } from "../../../services/scanFlowService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
-import { sendApprovedDraft, GmailNotConnectedError } from "../../../services/emailFollowUpService";
-import { buildGoogleAuthUrl } from "../../../integrations/gmail/oauth";
-import { isGmailFollowUpEnabled } from "../../../config/env";
+import { registerCardMessageRef } from "../../../services/cardService";
 import { NormalizedTelegramMessage } from "../../../integrations/telegram/types";
 import { UserWithEvent } from "../../../types/domain";
 import { resumeScanAfterEventSet, sendScanResult } from "./photo";
@@ -39,7 +37,7 @@ export async function tryContinuePendingState(
       if (user.pending_front_media_id) {
         await resumeScanAfterEventSet(chatId, user.user_id);
       } else {
-        await telegramClient.sendMessage(chatId, Copy.eventConfirmed(event.name));
+        await telegramClient.sendMessage(chatId, Copy.eventConfirmed(event.name, user.event_lifetime_hours));
       }
       return true;
     }
@@ -52,12 +50,12 @@ export async function tryContinuePendingState(
       }
       if (msg.callbackData?.startsWith(Ids.eventPickPrefix)) {
         const eventId = msg.callbackData.slice(Ids.eventPickPrefix.length);
+        const eventName = await setActiveEventById(user.user_id, eventId);
         await usersRepo.setState(user.user_id, "idle");
-        await setActiveEventById(user.user_id, eventId);
         if (user.pending_front_media_id) {
           await resumeScanAfterEventSet(chatId, user.user_id);
         } else {
-          await telegramClient.sendMessage(chatId, "Switched to that event.");
+          await telegramClient.sendMessage(chatId, Copy.eventSwitched(eventName, user.event_lifetime_hours));
         }
         return true;
       }
@@ -72,7 +70,7 @@ export async function tryContinuePendingState(
         telegramClient.downloadFileById(user.pending_front_media_id),
         telegramClient.downloadFileById(msg.photoFileId),
       ]);
-      const { card, extracted, draft } = await finalizeScan({
+      const { card, extracted } = await finalizeScan({
         userId: user.user_id,
         accountId: user.account_id,
         eventId: user.active_event_id!,
@@ -84,10 +82,9 @@ export async function tryContinuePendingState(
         backImageId: msg.photoFileId,
         backImageBuffer: backBuffer,
         backMimeType: "image/jpeg",
-        requester: { fullName: user.full_name, email: user.email },
-        activeEventName: user.active_event_name,
       });
-      await sendScanResult(chatId, msg.messageId ?? undefined, card, extracted, draft);
+      if (msg.messageId) await registerCardMessageRef(card.id, String(msg.messageId));
+      await sendScanResult(chatId, msg.messageId ?? undefined, card, extracted, user);
       return true;
     }
 
@@ -109,16 +106,6 @@ export async function tryContinuePendingState(
         await sendEventLifetimePicker(chatId);
         return true;
       }
-      if (msg.callbackData === Ids.accountConnectGmail) {
-        await usersRepo.setState(user.user_id, "idle");
-        if (!isGmailFollowUpEnabled) {
-          await telegramClient.sendMessage(chatId, "Gmail follow-up isn't configured on this server yet.");
-          return true;
-        }
-        const authUrl = buildGoogleAuthUrl(user.user_id);
-        await telegramClient.sendMessage(chatId, Copy.gmailNotConnected(authUrl));
-        return true;
-      }
       return false;
     }
 
@@ -129,31 +116,6 @@ export async function tryContinuePendingState(
       await accountsRepo.update(user.account_id!, { event_lifetime_hours: hours });
       await telegramClient.sendMessage(chatId, Copy.eventLifetimeSet(eventLifetimeLabel(hours)));
       return true;
-    }
-
-    case "awaiting_email_review": {
-      const cardId = user.active_visiting_card_id;
-      if (msg.callbackData === Ids.emailReviewChange) {
-        await usersRepo.setState(user.user_id, "idle");
-        await telegramClient.sendMessage(chatId, Copy.emailDraftDismissed);
-        return true;
-      }
-      if (msg.callbackData === Ids.emailReviewApprove && cardId) {
-        await usersRepo.setState(user.user_id, "idle");
-        try {
-          await sendApprovedDraft(user.user_id, cardId);
-          await telegramClient.sendMessage(chatId, Copy.emailDraftSaved);
-        } catch (err) {
-          if (err instanceof GmailNotConnectedError) {
-            const authUrl = buildGoogleAuthUrl(user.user_id);
-            await telegramClient.sendMessage(chatId, Copy.gmailNotConnected(authUrl));
-          } else {
-            throw err;
-          }
-        }
-        return true;
-      }
-      return false;
     }
 
     default:

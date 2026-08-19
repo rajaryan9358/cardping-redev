@@ -123,14 +123,6 @@ async function setState(userId: string, state: UserState): Promise<void> {
   if (error) throw error;
 }
 
-async function setWriteEmail(userId: string, writeEmail: boolean): Promise<void> {
-  const { error } = await supabase
-    .from("users")
-    .update({ write_email: writeEmail })
-    .eq("id", userId);
-  if (error) throw error;
-}
-
 async function decrementCoinBalance(userId: string): Promise<User> {
   const { data, error } = await supabase.rpc("decrement_coin_balance", { user_uuid: userId });
   if (error) throw error;
@@ -162,7 +154,6 @@ export const usersRepo = {
   setPendingMedia,
   setActiveVisitingCard,
   setState,
-  setWriteEmail,
   decrementCoinBalance,
   incrementCoinBalance,
   setCoinBalance,

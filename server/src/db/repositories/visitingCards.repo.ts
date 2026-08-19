@@ -1,5 +1,6 @@
 import { supabase } from "../client";
 import { Channel, ExtractedCard, VisitingCard } from "../../types/domain";
+import { cardMessageRefsRepo } from "./cardMessageRefs.repo";
 
 export interface CreateVisitingCardInput {
   userId: string;
@@ -103,9 +104,18 @@ async function findById(cardId: string): Promise<VisitingCard | null> {
 }
 
 /** Used to match an inbound voice note (sent as a reply) back to the card
- * whose extraction message it replied to — same trick the n8n flow used
- * with `context.id` / `visiting_cards.message_id`. */
+ * whose extraction message it replied to. Checks card_message_refs first
+ * (every message a scan's result touched — front/back photo, voice-note
+ * hint, summary), falling back to the legacy single message_id column for
+ * cards scanned before that table existed. */
 async function findByMessageId(messageId: string): Promise<VisitingCard | null> {
+  const refCardId = await cardMessageRefsRepo.findCardIdByMessageId(messageId);
+  if (refCardId) {
+    const { data, error } = await supabase.from("visiting_cards").select("*").eq("id", refCardId).maybeSingle();
+    if (error) throw error;
+    if (data) return data as VisitingCard;
+  }
+
   const { data, error } = await supabase
     .from("visiting_cards")
     .select("*")

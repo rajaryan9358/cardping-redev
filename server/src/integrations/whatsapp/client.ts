@@ -20,14 +20,15 @@ async function sendText(
   to: string,
   body: string,
   opts: { replyToMessageId?: string } = {},
-): Promise<void> {
-  await graph.post(messagesUrl(phoneNumberId), {
+): Promise<string> {
+  const { data } = await graph.post(messagesUrl(phoneNumberId), {
     messaging_product: "whatsapp",
     to,
     ...(opts.replyToMessageId ? { context: { message_id: opts.replyToMessageId } } : {}),
     type: "text",
     text: { preview_url: false, body },
   });
+  return data.messages?.[0]?.id as string;
 }
 
 /** Free-form (not pre-approved) interactive button message. WhatsApp allows
@@ -118,8 +119,8 @@ async function sendContactCard(
     waId: string;
     website: string;
   },
-): Promise<void> {
-  await graph.post(messagesUrl(phoneNumberId), {
+): Promise<string> {
+  const { data } = await graph.post(messagesUrl(phoneNumberId), {
     messaging_product: "whatsapp",
     to,
     type: "contacts",
@@ -139,6 +140,7 @@ async function sendContactCard(
       },
     ],
   });
+  return data.messages?.[0]?.id as string;
 }
 
 async function getMediaUrl(mediaId: string): Promise<{ url: string; mimeType: string }> {

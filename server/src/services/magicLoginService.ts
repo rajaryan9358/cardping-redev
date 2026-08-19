@@ -31,6 +31,17 @@ export interface ResolvedMagicLoginToken {
   destinationPath: string;
 }
 
+const LINK_PREVIEW_BOT_UA_PATTERN =
+  /whatsapp|telegrambot|facebookexternalhit|slackbot|twitterbot|discordbot|linkedinbot|skypeuripreview|redditbot/i;
+
+/** WhatsApp and Telegram both fetch a link server-side to generate a chat
+ * preview card *before* the user ever taps it — since the token is
+ * single-use, that fetch would otherwise burn it and leave the real tap
+ * looking like an expired link. Checked before ever touching the token. */
+export function isLikelyLinkPreviewBot(userAgent: string | undefined): boolean {
+  return Boolean(userAgent && LINK_PREVIEW_BOT_UA_PATTERN.test(userAgent));
+}
+
 /** Resolves and consumes in one step — unlike the onboarding token, there's
  * no separate "peek without consuming" need here (the token is only ever
  * used once, immediately, to establish a session). */

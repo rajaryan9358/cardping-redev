@@ -2,6 +2,7 @@ import { telegramClient } from "../../../integrations/telegram/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
+import { effectiveActiveEventName } from "../../../services/eventService";
 import { NormalizedTelegramMessage } from "../../../integrations/telegram/types";
 import { UserWithEvent } from "../../../types/domain";
 import { Copy, sendAccountSettingsMenu, sendEventPicker } from "../messages";
@@ -15,19 +16,25 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
       await telegramClient.sendMessage(chatId, Copy.askForPhoto);
       return;
 
-    case Ids.menuSetEvent:
-      if (user.active_event_name) {
-        await telegramClient.sendMessage(chatId, Copy.currentEventChangePrompt(user.active_event_name), {
-          buttons: [
-            { text: "Change it", data: Ids.eventChangeYes },
-            { text: "Keep it", data: Ids.eventChangeNo },
-          ],
-        });
+    case Ids.menuSetEvent: {
+      const activeEventName = effectiveActiveEventName(user);
+      if (activeEventName) {
+        await telegramClient.sendMessage(
+          chatId,
+          Copy.currentEventChangePrompt(activeEventName, user.active_event_set_at, user.event_lifetime_hours),
+          {
+            buttons: [
+              { text: "Change it", data: Ids.eventChangeYes },
+              { text: "Keep it", data: Ids.eventChangeNo },
+            ],
+          },
+        );
         return;
       }
       await usersRepo.setState(user.user_id, "awaiting_event_choice");
       await sendEventPicker(chatId, user.user_id);
       return;
+    }
 
     case Ids.eventChangeYes:
       await usersRepo.setState(user.user_id, "awaiting_event_choice");
@@ -35,11 +42,11 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
       return;
 
     case Ids.eventChangeNo:
-      await telegramClient.sendMessage(chatId, Copy.keepingCurrentEvent(user.active_event_name ?? ""));
+      await telegramClient.sendMessage(chatId, Copy.keepingCurrentEvent(effectiveActiveEventName(user) ?? ""));
       return;
 
     case Ids.menuBuyCredits: {
-      const linkUrl = await createMagicLoginLink(user.account_id!, "/subscription/topup");
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/topup");
       await telegramClient.sendMessage(chatId, Copy.buyCreditsLink(linkUrl));
       return;
     }

@@ -2,6 +2,7 @@ import { whatsappClient } from "../../integrations/whatsapp/client";
 import { eventsRepo } from "../../db/repositories/events.repo";
 import { ExtractedCard } from "../../types/domain";
 import { SubscriptionStatus } from "../../services/subscriptionStatus";
+import { formatEventLifetimeRemaining } from "../../services/eventService";
 import { Ids } from "./ids";
 
 export async function sendMainMenu(
@@ -58,7 +59,6 @@ export async function sendAccountSettingsMenu(
       title: `Event Lifetime: ${eventLifetimeLabel(eventLifetimeHours)}`,
       description: "How long an event stays active",
     },
-    { id: Ids.accountConnectGmail, title: "Connect Gmail", description: "Save follow-up drafts automatically" },
   ]);
 }
 
@@ -105,24 +105,21 @@ export const Copy = {
   needEventFirst:
     "Let's set an event name first so your scanned cards stay organised. What would you like to call it?",
   askNewEventName: "What would you like to name the new event?",
-  eventConfirmed: (name: string) =>
-    `Great, your event *${name}* is set up. Now you can send visiting cards.`,
-  currentEventChangePrompt: (name: string) => `Your current event is *${name}*. Change it?`,
+  eventConfirmed: (name: string, lifetimeHours: number | null) =>
+    `Great, your event *${name}* is set up (${lifetimeHours ? `active for ${lifetimeHours}h` : "no expiry"}). Now you can send visiting cards.`,
+  eventSwitched: (name: string, lifetimeHours: number | null) =>
+    `Switched to *${name}* (${lifetimeHours ? `active for ${lifetimeHours}h` : "no expiry"}).`,
+  currentEventChangePrompt: (name: string, setAt: string | null, lifetimeHours: number | null) =>
+    `Your current event is *${name}* (${formatEventLifetimeRemaining(setAt, lifetimeHours)}). Change it?`,
   keepingCurrentEvent: (name: string) => `Keeping the current event: *${name}*.`,
   eventPickerPrompt: "Which event should this go under?",
   askForPhoto:
     "Sure — please upload a clear photo of a business card. Good lighting helps accuracy!",
   askForBackPhoto: "Got the front — now send a photo of the *back* of the card.",
   voiceNoteHint:
-    "Want to add a voice note about this contact? Just reply to this message with a voice note.",
+    "Want to add a voice note about this contact? Reply to this photo, this message, or the contact card with a voice note.",
   voiceNoteSaved: "Transcript successfully created ✅",
-  voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card message.",
-  emailReviewPrompt: (subject: string, body: string) =>
-    `I drafted a follow-up email for this contact:\n\n*Subject:* ${subject}\n\n${body}\n\nSave it as a Gmail draft?`,
-  emailDraftSaved: "I've saved the draft in your Gmail 😊",
-  emailDraftDismissed: "No worries, I won't send that draft.",
-  gmailNotConnected: (authUrl: string) =>
-    `You haven't connected Gmail yet. Tap the link below to connect it, then try again:\n${authUrl}`,
+  voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card, its summary, or its contact card message.",
   accountSettingsPrompt: "What would you like to do?",
   subscriptionSummary: (status: SubscriptionStatus) => {
     if (status.tone === "active") {
@@ -141,7 +138,6 @@ export const Copy = {
   subscribeLink: (url: string) => `Pick a plan here:\n${url}`,
   scanBothSidesToggled: (on: boolean) => `Scan Both Sides is now *${on ? "On" : "Off"}*.`,
   eventLifetimeSet: (label: string) => `Event lifetime set to *${label}*.`,
-  gmailConnected: "Gmail connected! You can now save AI-drafted follow-up emails as drafts.",
   channelOnboardingPrompt: (url: string) =>
     `👋 Welcome to CardPing! To start scanning cards, finish setting up your account here (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,
 };

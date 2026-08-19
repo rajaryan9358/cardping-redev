@@ -9,9 +9,9 @@ async function sendMessage(
   chatId: string,
   text: string,
   opts: { replyToMessageId?: number; buttons?: InlineButton[]; buttonRows?: InlineButton[][] } = {},
-): Promise<void> {
+): Promise<number> {
   const rows = opts.buttonRows ?? (opts.buttons ? [opts.buttons] : undefined);
-  await api.post("/sendMessage", {
+  const { data } = await api.post("/sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
@@ -24,6 +24,7 @@ async function sendMessage(
         }
       : {}),
   });
+  return data.result.message_id as number;
 }
 
 async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {

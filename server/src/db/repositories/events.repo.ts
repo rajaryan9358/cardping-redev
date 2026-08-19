@@ -12,6 +12,12 @@ async function create(userId: string, name: string): Promise<EventRow> {
   return data as EventRow;
 }
 
+async function findById(eventId: string): Promise<EventRow | null> {
+  const { data, error } = await supabase.from("events").select("*").eq("id", eventId).maybeSingle();
+  if (error) throw error;
+  return data as EventRow | null;
+}
+
 // ── dashboard/ account-scoped access ────────────────────────────────────
 // Same "resolve via linked usersIds" pattern as visitingCards.repo.ts.
 
@@ -97,6 +103,7 @@ async function countCardsForEvent(eventId: string, usersIds: string[]): Promise<
 
 export const eventsRepo = {
   create,
+  findById,
   listForAccount,
   findByIdForAccount,
   createForUsersId,
