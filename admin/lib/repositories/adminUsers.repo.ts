@@ -2,29 +2,25 @@ import "server-only";
 import { supabase } from "../supabase";
 import { parseSort } from "../sort";
 
-export interface AdminUserRow {
-  user_id: string;
-  email: string | null;
+/** The detail page's row shape — account-aware, unlike the old
+ * user_with_event-keyed version this replaced. `id` is whatever the route
+ * was reached with (an accountId for "account" kind, a bare users.id for
+ * "unlinked_user"); `email`/`full_name` are the real account's when
+ * linked, not a channel identity's own (almost always blank) columns;
+ * `userIds` is every linked channel identity — Events/Cards/Transactions/
+ * Interaction-history all query across the whole list, so a dual-linked
+ * account's WhatsApp *and* Telegram activity both show up. */
+export interface AdminUserDetail {
+  id: string;
+  kind: "account" | "unlinked_user";
   full_name: string | null;
-  wa_id: string | null;
-  telegram_id: string | null;
-  telegram_chat_id: string | null;
-  coin_balance: number;
+  email: string | null;
+  channels: { channel: "whatsapp" | "telegram"; identifier: string; usersId: string }[];
+  userIds: string[];
   subscription_tier: string | null;
-  blocked_at: string | null;
   marketing_opt_in: boolean;
   created_at: string;
-  plan_id: string | null;
-  plan_expires_at: string | null;
   last_login: string | null;
-  // Resolved through channel_links/accounts once this channel identity is
-  // linked to a dashboard login (see server/db/schema.sql's "dashboard/
-  // real accounts" block) — null/falls back to the legacy columns above
-  // for anyone who hasn't linked. Every admin action (block, adjust
-  // coins, change plan) reads and writes through these, not the raw
-  // columns, so it works correctly either way.
-  account_id: string | null;
-  linked_account_email: string | null;
   effective_coin_balance: number;
   effective_blocked_at: string | null;
   effective_plan_id: string | null;
@@ -52,9 +48,6 @@ export interface ListUsersParams {
   pageSize: number;
 }
 
-const USER_ROW_COLUMNS =
-  "user_id, email, full_name, wa_id, telegram_id, telegram_chat_id, coin_balance, subscription_tier, blocked_at, marketing_opt_in, created_at, plan_id, plan_expires_at, last_login, account_id, linked_account_email, effective_coin_balance, effective_blocked_at, effective_plan_id, effective_plan_expires_at";
-
 export interface Paginated<T> {
   rows: T[];
   total: number;
@@ -78,6 +71,10 @@ export interface AdminUserListRow {
   // an "account" row, itself for "unlinked_user", null for an account
   // with zero linked channels (nothing to view/message yet).
   detail_user_id: string | null;
+  // Every linked users.id (account, 0/1/2 entries) or just [id] (unlinked_user)
+  // — what the Cards page's "view this person's cards" filter needs, since a
+  // dual-channel account's scans are split across two channel identities.
+  userIds: string[];
   full_name: string | null;
   email: string | null;
   wa_id: string | null;
@@ -217,6 +214,7 @@ async function listUsers({
         id: a.id,
         kind: "account" as const,
         detail_user_id: accountLinks[0]?.users_id ?? null,
+        userIds: accountLinks.map((l) => l.users_id),
         full_name: a.full_name,
         email: a.email,
         wa_id: waLink?.channel_identifier ?? null,
@@ -243,6 +241,7 @@ async function listUsers({
       id: u.id,
       kind: "unlinked_user" as const,
       detail_user_id: u.id,
+      userIds: [u.id],
       full_name: u.full_name,
       email: u.email,
       wa_id: u.wa_id,
@@ -279,20 +278,95 @@ async function listUsers({
   return { rows: allRows.slice(from, from + pageSize), total: allRows.length };
 }
 
-async function getUserDetail(userId: string): Promise<AdminUserRow | null> {
-  const { data, error } = await supabase
-    .from("user_with_event")
-    .select(USER_ROW_COLUMNS)
-    .eq("user_id", userId)
+/** `id` is whatever the route was reached with — tries it as an accountId
+ * first (the common case: UsersTable now links via row.id, an accountId
+ * for "account" kind rows), falling back to a bare users.id for
+ * "unlinked_user" rows. See AdminUserDetail's doc comment for why this
+ * replaced the old user_with_event-keyed version. */
+async function getUserDetail(id: string): Promise<AdminUserDetail | null> {
+  const { data: account, error: accErr } = await supabase
+    .from("accounts")
+    .select("id, full_name, email, coin_balance, blocked_at, plan_id, plan_expires_at, created_at")
+    .eq("id", id)
     .maybeSingle();
-  if (error) throw error;
-  return data as AdminUserRow | null;
+  if (accErr) throw accErr;
+
+  if (account) {
+    const { data: links, error: linkErr } = await supabase
+      .from("channel_links")
+      .select("users_id, channel, channel_identifier")
+      .eq("account_id", account.id);
+    if (linkErr) throw linkErr;
+
+    const userIds = (links ?? []).map((l) => l.users_id);
+    let marketingOptIn = false;
+    if (userIds.length > 0) {
+      const { data: linkedUsers, error: usersErr } = await supabase.from("users").select("marketing_opt_in").in("id", userIds);
+      if (usersErr) throw usersErr;
+      // All-or-nothing, same convention as the dashboard's own account-wide
+      // preference toggle (server/'s GET /auth/me) — keeps the "does this
+      // account want marketing" answer consistent across the app.
+      marketingOptIn = (linkedUsers ?? []).length > 0 && (linkedUsers ?? []).every((u) => u.marketing_opt_in);
+    }
+
+    return {
+      id: account.id,
+      kind: "account",
+      full_name: account.full_name,
+      email: account.email,
+      channels: (links ?? []).map((l) => ({ channel: l.channel, identifier: l.channel_identifier, usersId: l.users_id })),
+      userIds,
+      subscription_tier: null,
+      marketing_opt_in: marketingOptIn,
+      created_at: account.created_at,
+      last_login: null,
+      effective_coin_balance: account.coin_balance,
+      effective_blocked_at: account.blocked_at,
+      effective_plan_id: account.plan_id,
+      effective_plan_expires_at: account.plan_expires_at,
+    };
+  }
+
+  const { data: user, error: userErr } = await supabase
+    .from("users")
+    .select(
+      "id, full_name, email, wa_id, telegram_id, telegram_chat_id, coin_balance, blocked_at, plan_id, plan_expires_at, subscription_tier, marketing_opt_in, created_at, last_login",
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (userErr) throw userErr;
+  if (!user) return null;
+
+  const channels: AdminUserDetail["channels"] = [];
+  if (user.wa_id) channels.push({ channel: "whatsapp", identifier: user.wa_id, usersId: user.id });
+  // identifier is chat_id (falling back to telegram_id) — what sending
+  // actually needs; the two are equal for almost every user, differing
+  // only for group/topic chats (see users.repo.ts in server/).
+  if (user.telegram_id) channels.push({ channel: "telegram", identifier: user.telegram_chat_id || user.telegram_id, usersId: user.id });
+
+  return {
+    id: user.id,
+    kind: "unlinked_user",
+    full_name: user.full_name,
+    email: user.email,
+    channels,
+    userIds: [user.id],
+    subscription_tier: user.subscription_tier,
+    marketing_opt_in: user.marketing_opt_in,
+    created_at: user.created_at,
+    last_login: user.last_login,
+    effective_coin_balance: user.coin_balance,
+    effective_blocked_at: user.blocked_at,
+    effective_plan_id: user.plan_id,
+    effective_plan_expires_at: user.plan_expires_at,
+  };
 }
 
-async function getUserEvents(userId: string) {
+async function getUserEvents(userIds: string[]) {
+  if (userIds.length === 0) return [];
   const [{ data: events, error: eventsError }, { data: cards, error: cardsError }] = await Promise.all([
-    supabase.from("events").select("id, name, created_at").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("visiting_cards").select("id, event_id").eq("user_id", userId),
+    supabase.from("events").select("id, name, created_at").in("user_id", userIds).order("created_at", { ascending: false }),
+    supabase.from("visiting_cards").select("id, event_id").in("user_id", userIds),
   ]);
   if (eventsError) throw eventsError;
   if (cardsError) throw cardsError;
@@ -306,11 +380,12 @@ async function getUserEvents(userId: string) {
   return (events ?? []).map((event) => ({ ...event, cardCount: counts.get(event.id) ?? 0 }));
 }
 
-async function getUserCards(userId: string) {
+async function getUserCards(userIds: string[]) {
+  if (userIds.length === 0) return [];
   const { data, error } = await supabase
     .from("visiting_cards")
     .select("id, full_name, company_name, uploaded_by, extraction_confidence, created_at")
-    .eq("user_id", userId)
+    .in("user_id", userIds)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -319,14 +394,16 @@ async function getUserCards(userId: string) {
 /** Dashboard-originated purchases (subscribe/top-up from the dashboard or a
  * bot-issued magic-login link) are stored with account_id set and user_id
  * null — filtering on user_id alone silently hid every one of them once a
- * channel got linked. Matches either. */
-async function getUserTransactions(userId: string) {
-  const accountId = await resolveAccountId(userId);
-  const filter = accountId ? `user_id.eq.${userId},account_id.eq.${accountId}` : `user_id.eq.${userId}`;
+ * channel got linked. Matches either, across every linked channel identity
+ * plus the account itself. */
+async function getUserTransactions(userIds: string[], accountId?: string | null) {
+  if (userIds.length === 0 && !accountId) return [];
+  const parts = userIds.map((id) => `user_id.eq.${id}`);
+  if (accountId) parts.push(`account_id.eq.${accountId}`);
   const { data, error } = await supabase
     .from("transactions")
     .select("id, type, coins, status, created_at")
-    .or(filter)
+    .or(parts.join(","))
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;
@@ -388,13 +465,14 @@ const INTERACTION_HISTORY_LIMIT = 30;
  * no new table, just card scans (getUserCards) and notifications sent to
  * this user (notification_log, same shape adminNotificationsRepo.
  * listNotificationLog already returns), sorted together. */
-async function getUserInteractionHistory(userId: string): Promise<InteractionEvent[]> {
+async function getUserInteractionHistory(userIds: string[]): Promise<InteractionEvent[]> {
+  if (userIds.length === 0) return [];
   const [cards, { data: notifications, error }] = await Promise.all([
-    getUserCards(userId),
+    getUserCards(userIds),
     supabase
       .from("notification_log")
       .select("id, type, status, created_at")
-      .eq("user_id", userId)
+      .in("user_id", userIds)
       .order("created_at", { ascending: false })
       .limit(INTERACTION_HISTORY_LIMIT),
   ]);
@@ -423,6 +501,26 @@ async function getUserInteractionHistory(userId: string): Promise<InteractionEve
 // setMarketingOptIn in server/. No accountId indirection needed here.
 async function setMarketingOptIn(userId: string, optIn: boolean): Promise<void> {
   const { error } = await supabase.from("users").update({ marketing_opt_in: optIn }).eq("id", userId);
+  if (error) throw error;
+}
+
+/** Same as setMarketingOptIn, applied to every channel linked to an
+ * account at once — mirrors setMarketingOptInForAccount already built
+ * server-side for the dashboard's own preference toggle (server/src/
+ * services/channelLinkService.ts), so an "account" kind detail-page row
+ * toggles consistently across however many channels it has linked. */
+async function setAccountMarketingOptIn(accountId: string, optIn: boolean): Promise<void> {
+  const { data: links, error: linkErr } = await supabase.from("channel_links").select("users_id").eq("account_id", accountId);
+  if (linkErr) throw linkErr;
+  if (!links || links.length === 0) return;
+
+  const { error } = await supabase
+    .from("users")
+    .update({ marketing_opt_in: optIn })
+    .in(
+      "id",
+      links.map((l) => l.users_id),
+    );
   if (error) throw error;
 }
 
@@ -468,6 +566,7 @@ export const adminUsersRepo = {
   setBlocked,
   setAccountBlocked,
   setMarketingOptIn,
+  setAccountMarketingOptIn,
   adjustCoins,
   adjustAccountCoins,
 };

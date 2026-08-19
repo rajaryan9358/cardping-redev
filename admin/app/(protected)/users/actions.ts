@@ -22,20 +22,22 @@ export async function sendMessageAction(userId: string, input: SendMessageInput)
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
   if (!user) throw new Error("User not found.");
+  const waId = user.channels.find((c) => c.channel === "whatsapp")?.identifier;
+  const telegramChatId = user.channels.find((c) => c.channel === "telegram")?.identifier;
 
   if (input.channel === "telegram") {
-    if (!user.telegram_chat_id) throw new Error("This user has no Telegram chat on file.");
+    if (!telegramChatId) throw new Error("This user has no Telegram chat on file.");
     if (!input.body?.trim()) throw new Error("Enter a message.");
-    await sendTelegramBroadcastMessage(user.telegram_chat_id, input.body.trim());
+    await sendTelegramBroadcastMessage(telegramChatId, input.body.trim());
   } else {
-    if (!user.wa_id) throw new Error("This user has no WhatsApp number on file.");
+    if (!waId) throw new Error("This user has no WhatsApp number on file.");
     const within24h = user.last_login && Date.now() - new Date(user.last_login).getTime() < WITHIN_24H_MS;
     if (within24h) {
       if (!input.body?.trim()) throw new Error("Enter a message.");
-      await sendWhatsAppText(user.wa_id, input.body.trim());
+      await sendWhatsAppText(waId, input.body.trim());
     } else {
       if (!input.templateName) throw new Error("This user is outside the 24h window — pick a template.");
-      await sendWhatsAppTemplate(user.wa_id, input.templateName, input.languageCode || "en", []);
+      await sendWhatsAppTemplate(waId, input.templateName, input.languageCode || "en", []);
     }
   }
 
@@ -81,11 +83,12 @@ export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
   if (!user) throw new Error("User not found.");
-  if (!user.wa_id) throw new Error("This user has no WhatsApp number on file.");
+  const waId = user.channels.find((c) => c.channel === "whatsapp")?.identifier;
+  if (!waId) throw new Error("This user has no WhatsApp number on file.");
 
   await sendNotification({
     userId,
-    waId: user.wa_id,
+    waId,
     type: "low_balance_alert",
     triggeredBy: "manual",
     adminUserId: admin.id,
@@ -113,6 +116,21 @@ export async function setMarketingOptInAction(userId: string, optIn: boolean): P
   });
   revalidatePath("/users");
   revalidatePath(`/users/${userId}`);
+}
+
+/** Same as setMarketingOptInAction, applied to every channel linked to an
+ * account at once — see adminUsersRepo.setAccountMarketingOptIn. */
+export async function setAccountMarketingOptInAction(accountId: string, optIn: boolean): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.setAccountMarketingOptIn(accountId, optIn);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: optIn ? "user.marketing_opt_in" : "user.marketing_opt_out",
+    targetTable: "accounts",
+    targetId: accountId,
+  });
+  revalidatePath("/users");
+  revalidatePath(`/users/${accountId}`);
 }
 
 export async function adjustUserCoinsAction(

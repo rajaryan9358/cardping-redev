@@ -52,7 +52,8 @@ export async function sendRenewalReminderAction(userId: string): Promise<void> {
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
   if (!user) throw new Error("User not found.");
-  if (!user.wa_id) throw new Error("This user has no WhatsApp number on file.");
+  const waId = user.channels.find((c) => c.channel === "whatsapp")?.identifier;
+  if (!waId) throw new Error("This user has no WhatsApp number on file.");
 
   const daysLeft = user.effective_plan_expires_at
     ? Math.max(0, Math.ceil((new Date(user.effective_plan_expires_at).getTime() - Date.now()) / 86400000))
@@ -60,7 +61,7 @@ export async function sendRenewalReminderAction(userId: string): Promise<void> {
 
   await sendNotification({
     userId,
-    waId: user.wa_id,
+    waId,
     type: "renewal_reminder",
     triggeredBy: "manual",
     adminUserId: admin.id,

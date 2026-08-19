@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
@@ -29,6 +30,8 @@ export function CardsTable({
   pageSize,
   maxConfidence,
   sort,
+  userFilterName,
+  eventFilterName,
 }: {
   rows: AdminCardRow[];
   total: number;
@@ -36,6 +39,8 @@ export function CardsTable({
   pageSize: number;
   maxConfidence: number;
   sort: string;
+  userFilterName: string | null;
+  eventFilterName: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -65,8 +70,39 @@ export function CardsTable({
     }
   }
 
+  function clearNarrowingFilters(): string {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("userIds");
+    params.delete("userName");
+    params.delete("eventId");
+    params.delete("eventName");
+    params.set("page", "1");
+    return `${pathname}?${params.toString()}`;
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {(userFilterName || eventFilterName) && (
+        <div className="flex flex-wrap gap-2">
+          {userFilterName && (
+            <Link
+              href={clearNarrowingFilters()}
+              className="flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-text hover:bg-accent-soft/70"
+            >
+              Showing cards for {userFilterName} <X className="size-3" strokeWidth={2} />
+            </Link>
+          )}
+          {eventFilterName && (
+            <Link
+              href={clearNarrowingFilters()}
+              className="flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-text hover:bg-accent-soft/70"
+            >
+              Showing cards for {eventFilterName} <X className="size-3" strokeWidth={2} />
+            </Link>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold tracking-wide text-muted-2">Confidence at or below</span>
         <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">

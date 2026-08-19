@@ -21,6 +21,36 @@ export interface ListEventsParams {
 
 const SORTABLE_FIELDS = new Set(["created_at", "cardCount"]);
 
+/** Prefers the linked dashboard account's real email/name over the
+ * channel identity's own (almost always blank) columns — same bug/fix
+ * shape as adminUsersRepo's account-aware detail page. Batched: one
+ * channel_links lookup + one accounts lookup for every distinct owner in
+ * the page, not per-row. */
+async function resolveOwners(
+  userIds: string[],
+): Promise<Map<string, { full_name: string | null; email: string | null }>> {
+  const result = new Map<string, { full_name: string | null; email: string | null }>();
+  if (userIds.length === 0) return result;
+
+  const { data: links, error: linkErr } = await supabase
+    .from("channel_links")
+    .select("users_id, account_id")
+    .in("users_id", userIds);
+  if (linkErr) throw linkErr;
+  if (!links || links.length === 0) return result;
+
+  const accountIds = [...new Set(links.map((l) => l.account_id))];
+  const { data: accounts, error: accErr } = await supabase.from("accounts").select("id, full_name, email").in("id", accountIds);
+  if (accErr) throw accErr;
+
+  const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
+  for (const link of links) {
+    const account = accountsById.get(link.account_id);
+    if (account) result.set(link.users_id, { full_name: account.full_name, email: account.email });
+  }
+  return result;
+}
+
 /** Card count is a computed aggregate, not a DB column (see the two-query
  * approach below), so sorting by it means fetching every matching event,
  * computing counts, sorting in memory, then slicing the page — a
@@ -35,9 +65,14 @@ async function listEvents({ ownerSearch, sort, page, pageSize }: ListEventsParam
     .order("created_at", { ascending: false });
   if (error) throw error;
 
-  let events = (data ?? []).map((event) => ({
+  const rawEvents = (data ?? []).map((event) => ({
     ...event,
     owner: Array.isArray(event.owner) ? event.owner[0] ?? null : event.owner,
+  }));
+  const resolvedOwners = await resolveOwners(rawEvents.map((e) => e.user_id).filter((id): id is string => !!id));
+  let events = rawEvents.map((event) => ({
+    ...event,
+    owner: (event.user_id && resolvedOwners.get(event.user_id)) || event.owner,
   }));
 
   const term = ownerSearch?.trim().toLowerCase();
@@ -87,7 +122,11 @@ async function getEventDetail(eventId: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return { ...data, owner: Array.isArray(data.owner) ? data.owner[0] ?? null : data.owner };
+
+  const rawOwner = Array.isArray(data.owner) ? data.owner[0] ?? null : data.owner;
+  const resolvedOwners = await resolveOwners(data.user_id ? [data.user_id] : []);
+  const owner = (data.user_id && resolvedOwners.get(data.user_id)) || rawOwner;
+  return { ...data, owner };
 }
 
 async function getEventCards(eventId: string) {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2 } from "lucide-react";
+import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2, IdCard } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
@@ -233,13 +233,9 @@ export function UsersTable({
         {rows.map((user) => (
           <Tr key={user.id}>
             <Td>
-              {user.detail_user_id ? (
-                <Link href={`/users/${user.detail_user_id}`} className="font-medium text-ink hover:underline">
-                  {user.full_name || "Unnamed"}
-                </Link>
-              ) : (
-                <span className="font-medium text-ink">{user.full_name || "Unnamed"}</span>
-              )}
+              <Link href={`/users/${user.id}`} className="font-medium text-ink hover:underline">
+                {user.full_name || "Unnamed"}
+              </Link>
               <div className="text-xs text-muted">{user.email || "No email on file"}</div>
             </Td>
             <Td>
@@ -264,6 +260,15 @@ export function UsersTable({
               <div className="flex justify-end">
                 <RowActionsMenu
                   actions={[
+                    {
+                      label: "View cards",
+                      icon: <IdCard className="size-3.5" strokeWidth={2} />,
+                      onClick: () =>
+                        router.push(
+                          `/cards?userIds=${user.userIds.join(",")}&userName=${encodeURIComponent(user.full_name || "this person")}`,
+                        ),
+                      disabled: user.userIds.length === 0,
+                    },
                     { label: "Adjust coins", icon: <Coins className="size-3.5" strokeWidth={2} />, onClick: () => setCoinsTarget(user) },
                     {
                       label: user.effective_plan_id ? "Change plan" : "Assign plan",

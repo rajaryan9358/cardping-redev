@@ -3,14 +3,22 @@
 import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
-import { AdminUserRow } from "../../../../lib/repositories/adminUsers.repo";
-import { setUserBlockedAction, setMarketingOptInAction } from "../actions";
+import { AdminUserDetail } from "../../../../lib/repositories/adminUsers.repo";
+import {
+  setUserBlockedAction,
+  setAccountBlockedAction,
+  setMarketingOptInAction,
+  setAccountMarketingOptInAction,
+  adjustUserCoinsAction,
+  adjustAccountCoinsAction,
+} from "../actions";
 import { AdjustCoinsModal } from "../AdjustCoinsModal";
 
-export function UserDetailActions({ user }: { user: AdminUserRow }) {
+export function UserDetailActions({ user }: { user: AdminUserDetail }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [coinsOpen, setCoinsOpen] = useState(false);
   const [optInPending, setOptInPending] = useState(false);
+  const isAccount = user.kind === "account";
 
   return (
     <div className="flex gap-2">
@@ -22,7 +30,8 @@ export function UserDetailActions({ user }: { user: AdminUserRow }) {
         loading={optInPending}
         onClick={async () => {
           setOptInPending(true);
-          await setMarketingOptInAction(user.user_id, !user.marketing_opt_in);
+          const setOptIn = isAccount ? setAccountMarketingOptInAction : setMarketingOptInAction;
+          await setOptIn(user.id, !user.marketing_opt_in);
           setOptInPending(false);
         }}
       >
@@ -44,13 +53,15 @@ export function UserDetailActions({ user }: { user: AdminUserRow }) {
         danger={!user.effective_blocked_at}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={async () => {
-          await setUserBlockedAction(user.user_id, !user.effective_blocked_at);
+          const setBlocked = isAccount ? setAccountBlockedAction : setUserBlockedAction;
+          await setBlocked(user.id, !user.effective_blocked_at);
           setConfirmOpen(false);
         }}
       />
 
       <AdjustCoinsModal
-        target={coinsOpen ? { id: user.user_id, full_name: user.full_name, effective_coin_balance: user.effective_coin_balance } : null}
+        target={coinsOpen ? { id: user.id, full_name: user.full_name, effective_coin_balance: user.effective_coin_balance } : null}
+        onConfirm={isAccount ? adjustAccountCoinsAction : adjustUserCoinsAction}
         onClose={() => setCoinsOpen(false)}
       />
     </div>

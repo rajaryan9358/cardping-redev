@@ -13,10 +13,10 @@ export default async function UserDetailPage({ params }: { params: { userId: str
   if (!user) notFound();
 
   const [events, cards, transactions, interactionHistory] = await Promise.all([
-    adminUsersRepo.getUserEvents(params.userId),
-    adminUsersRepo.getUserCards(params.userId),
-    adminUsersRepo.getUserTransactions(params.userId),
-    adminUsersRepo.getUserInteractionHistory(params.userId),
+    adminUsersRepo.getUserEvents(user.userIds),
+    adminUsersRepo.getUserCards(user.userIds),
+    adminUsersRepo.getUserTransactions(user.userIds, user.kind === "account" ? user.id : null),
+    adminUsersRepo.getUserInteractionHistory(user.userIds),
   ]);
 
   return (
@@ -34,19 +34,20 @@ export default async function UserDetailPage({ params }: { params: { userId: str
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted">
             <span>{user.email || "No email on file"}</span>
-            {user.wa_id && (
-              <span className="flex items-center gap-1.5">
-                <MessageCircle className="size-4 text-success-text" strokeWidth={2} /> {user.wa_id}
+            {user.channels.map((c) => (
+              <span key={c.usersId + c.channel} className="flex items-center gap-1.5">
+                {c.channel === "whatsapp" ? (
+                  <MessageCircle className="size-4 text-success-text" strokeWidth={2} />
+                ) : (
+                  <Send className="size-4 text-accent" strokeWidth={2} />
+                )}
+                {c.identifier}
               </span>
-            )}
-            {user.telegram_id && (
-              <span className="flex items-center gap-1.5">
-                <Send className="size-4 text-accent" strokeWidth={2} /> {user.telegram_id}
-              </span>
-            )}
+            ))}
+            {user.channels.length === 0 && <span className="text-xs">No channel connected</span>}
           </div>
           <p className="mt-2 text-xs text-muted">
-            Joined {formatDate(user.created_at)} · Plan: {user.subscription_tier || "—"} ·
+            Joined {formatDate(user.created_at)} · Plan: {user.subscription_tier || user.effective_plan_id || "—"} ·
             Marketing opt-in: {user.marketing_opt_in ? "Yes" : "No"}
           </p>
         </div>

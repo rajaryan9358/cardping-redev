@@ -21,6 +21,12 @@ export interface AdminCardRow {
 
 export interface ListCardsParams {
   maxConfidence: number;
+  // Both independent of confidence and of each other, and combinable with
+  // it — a "view this person's cards" or "view this event's cards" link
+  // from Users/Events narrows down to their cards without abandoning the
+  // confidence filter already in place.
+  userIds?: string[];
+  eventId?: string;
   sort?: string;
   page: number;
   pageSize: number;
@@ -28,6 +34,8 @@ export interface ListCardsParams {
 
 async function listLowConfidenceCards({
   maxConfidence,
+  userIds,
+  eventId,
   sort,
   page,
   pageSize,
@@ -54,6 +62,8 @@ async function listLowConfidenceCards({
   if (maxConfidence < 1) {
     query = query.not("extraction_confidence", "is", null).lte("extraction_confidence", maxConfidence);
   }
+  if (userIds && userIds.length > 0) query = query.in("user_id", userIds);
+  if (eventId) query = query.eq("event_id", eventId);
 
   const { data, error, count } = await query
     .order(orderField, { ascending: orderAscending })
