@@ -1,10 +1,10 @@
 import { whatsappClient } from "../../../integrations/whatsapp/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
-import { createTopUpLink } from "../../../services/paymentService";
-import { isCashfreeEnabled } from "../../../config/env";
+import { createMagicLoginLink } from "../../../services/magicLoginService";
+import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types";
 import { UserWithEvent } from "../../../types/domain";
-import { Copy } from "../messages";
+import { Copy, sendAccountSettingsMenu, sendEventPicker } from "../messages";
 import { Ids } from "../ids";
 
 export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWithEvent): Promise<void> {
@@ -28,13 +28,13 @@ export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWit
         );
         return;
       }
-      await usersRepo.setState(user.user_id, "awaiting_event_name");
-      await whatsappClient.sendText(phoneNumberId, from, Copy.askNewEventName);
+      await usersRepo.setState(user.user_id, "awaiting_event_choice");
+      await sendEventPicker(phoneNumberId, from, user.user_id);
       return;
 
     case Ids.eventChangeYes:
-      await usersRepo.setState(user.user_id, "awaiting_event_name");
-      await whatsappClient.sendText(phoneNumberId, from, Copy.askNewEventName);
+      await usersRepo.setState(user.user_id, "awaiting_event_choice");
+      await sendEventPicker(phoneNumberId, from, user.user_id);
       return;
 
     case Ids.eventChangeNo:
@@ -45,28 +45,18 @@ export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWit
       );
       return;
 
-    case Ids.menuBuyCredits:
-      if (!isCashfreeEnabled) {
-        await whatsappClient.sendText(
-          phoneNumberId,
-          from,
-          "Coin top-ups aren't configured on this server yet.",
-        );
-        return;
-      }
-      {
-        const linkUrl = await createTopUpLink(user.user_id, from);
-        await whatsappClient.sendText(phoneNumberId, from, Copy.paymentLink(linkUrl));
-      }
+    case Ids.menuBuyCredits: {
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/subscription/topup");
+      await whatsappClient.sendText(phoneNumberId, from, Copy.buyCreditsLink(linkUrl));
       return;
+    }
 
-    case Ids.menuAccount:
+    case Ids.menuAccount: {
       await usersRepo.setState(user.user_id, "awaiting_account_settings_choice");
-      await whatsappClient.sendButtons(phoneNumberId, from, Copy.accountSettingsPrompt, [
-        { id: Ids.accountConnectGmail, title: "Connect Gmail" },
-        { id: Ids.accountCheckCredit, title: "Check Credit" },
-      ]);
+      const status = await getSubscriptionStatus(user);
+      await sendAccountSettingsMenu(phoneNumberId, from, status, Boolean(user.scan_both_sides), user.event_lifetime_hours);
       return;
+    }
 
     default:
       // Stale button tap (e.g. from an old menu the user scrolled back to)

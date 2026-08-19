@@ -61,6 +61,11 @@ export async function routeWhatsAppWebhook(body: unknown): Promise<void> {
       return;
     default:
       log.info({ type: message.type, from: message.from }, "unhandled WhatsApp message type");
-      await sendMainMenu(message.phoneNumberId, message.from, "Not sure how to handle that — here's what I can do:");
+      await sendMainMenu(
+        message.phoneNumberId,
+        message.from,
+        "Not sure how to handle that — here's what I can do:",
+        user.active_event_name,
+      );
   }
 }

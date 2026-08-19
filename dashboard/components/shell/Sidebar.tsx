@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, ShieldCheck, User, Users } from "lucide-react";
+import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, Settings, ShieldCheck, User, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { performLogout } from "@/lib/logout";
 
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
 const PROFILE_ITEMS = [
   { href: "/profile/personal", label: "Personal Info", icon: User },
   { href: "/profile/channels", label: "Channels", icon: Plug },
+  { href: "/profile/preferences", label: "Scan Preferences", icon: Settings },
   { href: "/profile/password", label: "Change Password", icon: KeyRound },
   { href: "/profile/sessions", label: "Sessions", icon: ShieldCheck },
   { href: "/profile/transactions", label: "Transaction History", icon: History },

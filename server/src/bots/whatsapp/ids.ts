@@ -9,9 +9,22 @@ export const Ids = {
 
   eventChangeYes: "event_change_yes",
   eventChangeNo: "event_change_no",
+  // Dynamic per-event rows use the prefix "event_pick:<eventId>" (see the
+  // event picker in handlers/button.ts) rather than a fixed Ids entry.
+  eventPickerNew: "event_pick_new",
+  eventPickPrefix: "event_pick:",
 
   accountConnectGmail: "account_connect_gmail",
-  accountCheckCredit: "account_check_credit",
+  accountSubscription: "account_subscription",
+  accountScanBothSides: "account_scan_both_sides",
+  accountEventLifetime: "account_event_lifetime",
+
+  eventLifetime1h: "event_lifetime_1",
+  eventLifetime6h: "event_lifetime_6",
+  eventLifetime12h: "event_lifetime_12",
+  eventLifetime24h: "event_lifetime_24",
+  eventLifetime48h: "event_lifetime_48",
+  eventLifetimeAlways: "event_lifetime_always",
 
   emailReviewApprove: "email_review_approve",
   emailReviewChange: "email_review_change",

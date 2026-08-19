@@ -1,16 +1,69 @@
 import { telegramClient } from "../../integrations/telegram/client";
+import { eventsRepo } from "../../db/repositories/events.repo";
 import { ExtractedCard } from "../../types/domain";
+import { SubscriptionStatus } from "../../services/subscriptionStatus";
 import { Ids } from "./ids";
 
-export async function sendMainMenu(chatId: string, greeting: string): Promise<void> {
+export async function sendMainMenu(chatId: string, greeting: string, activeEventName: string | null = null): Promise<void> {
   await telegramClient.sendMessage(chatId, greeting, {
     buttonRows: [
       [{ text: "📇 Scan a Business Card", data: Ids.menuScan }],
-      [{ text: "🏷️ Set an Event", data: Ids.menuSetEvent }],
+      [{ text: activeEventName ? `🏷️ Change Event (${activeEventName})` : "🏷️ Set an Event", data: Ids.menuSetEvent }],
       [{ text: "🪙 Buy Credits", data: Ids.menuBuyCredits }],
       [{ text: "⚙️ Account Settings", data: Ids.menuAccount }],
     ],
   });
+}
+
+/** Recent events + "+ New Event" — shown both from the menu's Set/Change
+ * Event action and when a photo arrives with no active (or expired) event,
+ * see scanFlowService.ts. Callback data for existing events is prefixed
+ * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids. */
+export async function sendEventPicker(chatId: string, usersId: string): Promise<void> {
+  const events = await eventsRepo.listForAccount([usersId]);
+  const rows = events.slice(0, 8).map((e) => [{ text: e.name, data: `${Ids.eventPickPrefix}${e.id}` }]);
+  rows.push([{ text: "+ New Event", data: Ids.eventPickerNew }]);
+  await telegramClient.sendMessage(chatId, Copy.eventPickerPrompt, { buttonRows: rows });
+}
+
+export async function sendAccountSettingsMenu(
+  chatId: string,
+  status: SubscriptionStatus,
+  scanBothSides: boolean,
+  eventLifetimeHours: number | null,
+): Promise<void> {
+  await telegramClient.sendMessage(chatId, Copy.accountSettingsPrompt, {
+    buttonRows: [
+      [{ text: `🪙 Subscription & Balance (${subscriptionLabel(status)})`, data: Ids.accountSubscription }],
+      [{ text: `🔁 Scan Both Sides: ${scanBothSides ? "On" : "Off"}`, data: Ids.accountScanBothSides }],
+      [{ text: `⏱️ Event Lifetime: ${eventLifetimeLabel(eventLifetimeHours)}`, data: Ids.accountEventLifetime }],
+      [{ text: "📧 Connect Gmail", data: Ids.accountConnectGmail }],
+    ],
+  });
+}
+
+export async function sendEventLifetimePicker(chatId: string): Promise<void> {
+  await telegramClient.sendMessage(chatId, "How long should an event stay active before you're asked again?", {
+    buttonRows: [
+      [{ text: "1 hour", data: Ids.eventLifetime1h }],
+      [{ text: "6 hours", data: Ids.eventLifetime6h }],
+      [{ text: "12 hours", data: Ids.eventLifetime12h }],
+      [{ text: "24 hours", data: Ids.eventLifetime24h }],
+      [{ text: "48 hours", data: Ids.eventLifetime48h }],
+      [{ text: "Always", data: Ids.eventLifetimeAlways }],
+    ],
+  });
+}
+
+export function eventLifetimeLabel(hours: number | null): string {
+  return hours ? `${hours}h` : "Always";
+}
+
+function subscriptionLabel(status: SubscriptionStatus): string {
+  if (status.tone === "active") return status.planName ?? "Active plan";
+  if (status.tone === "expired") return `${status.planName ?? "Plan"} expired`;
+  if (status.tone === "trial") return `Trial, ${status.coinBalance} coins`;
+  return "No active plan";
 }
 
 export function formatCardSummary(card: ExtractedCard): string {
@@ -27,15 +80,19 @@ export function formatCardSummary(card: ExtractedCard): string {
 export const Copy = {
   accountBlocked:
     "🚫 Your account is currently unable to scan cards. If you think this is a mistake, please contact support.",
-  insufficientCoins: (balance: number) =>
-    `❌ Insufficient coins!\n\n🪙 Current balance: ${balance}\n💳 You need at least 1 coin to process a visiting card.\n\nTap Buy Credits in the menu to top up.`,
+  outOfCoinsNoPlan: (subscribeUrl: string, topUpUrl: string) =>
+    `❌ Insufficient coins, and you don't have an active plan.\n\nSubscribe to a plan for recurring coins:\n${subscribeUrl}\n\nOr just top up:\n${topUpUrl}`,
+  outOfCoinsHasPlan: (topUpUrl: string) =>
+    `❌ Insufficient coins for now — top up to keep scanning:\n${topUpUrl}`,
   needEventFirst:
     "Let's set an event name first so your scanned cards stay organised. What would you like to call it?",
   askNewEventName: "What would you like to name the new event?",
   eventConfirmed: (name: string) => `Great, your event <b>${name}</b> is set up. Now you can send visiting cards.`,
   currentEventChangePrompt: (name: string) => `Your current event is <b>${name}</b>. Change it?`,
   keepingCurrentEvent: (name: string) => `Keeping the current event: <b>${name}</b>.`,
+  eventPickerPrompt: "Which event should this go under?",
   askForPhoto: "Sure — send a clear photo of a business card. Good lighting helps accuracy!",
+  askForBackPhoto: "Got the front — now send a photo of the <b>back</b> of the card.",
   voiceNoteHint: "Want to add a voice note about this contact? Reply to this message with a voice note.",
   voiceNoteSaved: "Transcript successfully created ✅",
   voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card message.",
@@ -46,8 +103,23 @@ export const Copy = {
   gmailNotConnected: (authUrl: string) =>
     `You haven't connected Gmail yet. Tap the link below to connect it, then try again:\n${authUrl}`,
   accountSettingsPrompt: "What would you like to do?",
-  coinBalance: (balance: number) => `You have <b>${balance}</b> coins remaining.`,
-  paymentLink: (url: string) => `Click here to top up your account:\n${url}`,
+  subscriptionSummary: (status: SubscriptionStatus) => {
+    if (status.tone === "active") {
+      const expires = status.planExpiresAt ? new Date(status.planExpiresAt).toLocaleDateString() : "—";
+      return `You're on <b>${status.planName}</b>, renews/expires ${expires}.\n🪙 ${status.coinBalance} coins remaining.`;
+    }
+    if (status.tone === "expired") {
+      return `Your <b>${status.planName}</b> plan expired.\n🪙 ${status.coinBalance} coins remaining.`;
+    }
+    if (status.tone === "trial") {
+      return `You're on the free trial.\n🪙 ${status.coinBalance} coins remaining.`;
+    }
+    return `You don't have an active plan.\n🪙 ${status.coinBalance} coins remaining.`;
+  },
+  buyCreditsLink: (url: string) => `Top up your coin balance here:\n${url}`,
+  subscribeLink: (url: string) => `Pick a plan here:\n${url}`,
+  scanBothSidesToggled: (on: boolean) => `Scan Both Sides is now <b>${on ? "On" : "Off"}</b>.`,
+  eventLifetimeSet: (label: string) => `Event lifetime set to <b>${label}</b>.`,
   gmailConnected: "Gmail connected! You can now save AI-drafted follow-up emails as drafts.",
   channelLinkConfirmed: "✅ This Telegram account is now connected to your CardPing dashboard login.",
   channelLinkCodeInvalid: "That connection link has expired or was already used — generate a new one from the dashboard.",

@@ -1,13 +1,26 @@
 import { whatsappClient } from "../../../integrations/whatsapp/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
-import { setActiveEvent } from "../../../services/eventService";
+import { accountsRepo } from "../../../db/repositories/accounts.repo";
+import { setActiveEvent, setActiveEventById } from "../../../services/eventService";
+import { finalizeScan } from "../../../services/scanFlowService";
+import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { sendApprovedDraft, GmailNotConnectedError } from "../../../services/emailFollowUpService";
 import { buildGoogleAuthUrl } from "../../../integrations/gmail/oauth";
 import { isGmailFollowUpEnabled } from "../../../config/env";
 import { NormalizedWhatsAppMessage } from "../../../integrations/whatsapp/types";
 import { UserWithEvent } from "../../../types/domain";
-import { Copy } from "../messages";
+import { resumeScanAfterEventSet, sendScanResult } from "./image";
+import { Copy, sendEventLifetimePicker, eventLifetimeLabel } from "../messages";
 import { Ids } from "../ids";
+
+const EVENT_LIFETIME_HOURS: Record<string, number | null> = {
+  [Ids.eventLifetime1h]: 1,
+  [Ids.eventLifetime6h]: 6,
+  [Ids.eventLifetime12h]: 12,
+  [Ids.eventLifetime24h]: 24,
+  [Ids.eventLifetime48h]: 48,
+  [Ids.eventLifetimeAlways]: null,
+};
 
 /** Continues a conversation the bot is mid-way through (the equivalent of
  * an n8n "wait for response" node, but implemented as explicit state on
@@ -25,14 +38,77 @@ export async function tryContinuePendingState(
       if (!name) return false;
       await usersRepo.setState(user.user_id, "idle");
       const event = await setActiveEvent(user.user_id, name);
-      await whatsappClient.sendText(phoneNumberId, from, Copy.eventConfirmed(event.name));
+      if (user.pending_front_media_id) {
+        await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
+      } else {
+        await whatsappClient.sendText(phoneNumberId, from, Copy.eventConfirmed(event.name));
+      }
+      return true;
+    }
+
+    case "awaiting_event_choice": {
+      if (msg.buttonId === Ids.eventPickerNew) {
+        await usersRepo.setState(user.user_id, "awaiting_event_name");
+        await whatsappClient.sendText(phoneNumberId, from, Copy.askNewEventName);
+        return true;
+      }
+      if (msg.buttonId?.startsWith(Ids.eventPickPrefix)) {
+        const eventId = msg.buttonId.slice(Ids.eventPickPrefix.length);
+        await usersRepo.setState(user.user_id, "idle");
+        await setActiveEventById(user.user_id, eventId);
+        if (user.pending_front_media_id) {
+          await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
+        } else {
+          await whatsappClient.sendText(phoneNumberId, from, "Switched to that event.");
+        }
+        return true;
+      }
+      return false;
+    }
+
+    case "awaiting_back_photo": {
+      if (msg.type !== "image" || !msg.mediaId || !user.pending_front_media_id) return false;
+      await usersRepo.setState(user.user_id, "idle");
+
+      const [front, back] = await Promise.all([
+        whatsappClient.downloadMediaById(user.pending_front_media_id),
+        whatsappClient.downloadMediaById(msg.mediaId),
+      ]);
+      const { card, extracted, draft } = await finalizeScan({
+        userId: user.user_id,
+        accountId: user.account_id,
+        eventId: user.active_event_id!,
+        channel: "whatsapp",
+        messageId: msg.waMessageId,
+        frontImageId: user.pending_front_media_id,
+        frontImageBuffer: front.buffer,
+        frontMimeType: front.mimeType,
+        backImageId: msg.mediaId,
+        backImageBuffer: back.buffer,
+        backMimeType: back.mimeType,
+        requester: { fullName: user.full_name, email: user.email },
+        activeEventName: user.active_event_name,
+      });
+      await sendScanResult(phoneNumberId, from, msg.waMessageId, card, extracted, draft);
       return true;
     }
 
     case "awaiting_account_settings_choice": {
-      if (msg.buttonId === Ids.accountCheckCredit) {
+      if (msg.buttonId === Ids.accountSubscription) {
         await usersRepo.setState(user.user_id, "idle");
-        await whatsappClient.sendText(phoneNumberId, from, Copy.coinBalance(user.effective_coin_balance));
+        const status = await getSubscriptionStatus(user);
+        await whatsappClient.sendText(phoneNumberId, from, Copy.subscriptionSummary(status));
+        return true;
+      }
+      if (msg.buttonId === Ids.accountScanBothSides) {
+        await usersRepo.setState(user.user_id, "idle");
+        const updated = await accountsRepo.update(user.account_id!, { scan_both_sides: !user.scan_both_sides });
+        await whatsappClient.sendText(phoneNumberId, from, Copy.scanBothSidesToggled(updated.scan_both_sides));
+        return true;
+      }
+      if (msg.buttonId === Ids.accountEventLifetime) {
+        await usersRepo.setState(user.user_id, "awaiting_event_lifetime_choice");
+        await sendEventLifetimePicker(phoneNumberId, from);
         return true;
       }
       if (msg.buttonId === Ids.accountConnectGmail) {
@@ -50,6 +126,15 @@ export async function tryContinuePendingState(
         return true;
       }
       return false;
+    }
+
+    case "awaiting_event_lifetime_choice": {
+      if (!msg.buttonId || !(msg.buttonId in EVENT_LIFETIME_HOURS)) return false;
+      await usersRepo.setState(user.user_id, "idle");
+      const hours = EVENT_LIFETIME_HOURS[msg.buttonId];
+      await accountsRepo.update(user.account_id!, { event_lifetime_hours: hours });
+      await whatsappClient.sendText(phoneNumberId, from, Copy.eventLifetimeSet(eventLifetimeLabel(hours)));
+      return true;
     }
 
     case "awaiting_email_review": {

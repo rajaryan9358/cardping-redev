@@ -657,6 +657,10 @@ end $$;
 -- yet, pointing them at dashboard signup (see channelOnboardingService.ts).
 alter type public.otp_purpose add value if not exists 'channel_onboarding';
 
+-- magic_login: a bot-issued auto-login link straight into a dashboard page
+-- (e.g. Buy Credits/Subscribe) — see magicLoginService.ts.
+alter type public.otp_purpose add value if not exists 'magic_login';
+
 create table if not exists public.otp_codes (
   id uuid not null default gen_random_uuid(),
   purpose public.otp_purpose not null,
@@ -709,6 +713,28 @@ alter table public.visiting_cards add column if not exists archived boolean not 
 alter table public.visiting_cards add column if not exists tags text[] not null default '{}';
 create index if not exists idx_cards_tags on public.visiting_cards using gin (tags);
 create index if not exists idx_cards_archived on public.visiting_cards using btree (archived);
+
+-- ── visiting_cards: back-of-card image (dual-side scan) ─────────────────
+-- Mirrors storage_path/image_public_url above — set when the account's
+-- scan_both_sides preference is on and a back photo was captured.
+alter table public.visiting_cards add column if not exists back_storage_path text null;
+alter table public.visiting_cards add column if not exists back_image_public_url text null;
+
+-- ── users: held-scan + event-lifetime state ──────────────────────────────
+-- pending_front_media_id/pending_back_media_id hold the channel's own media
+-- reference (WhatsApp mediaId / Telegram photoFileId) across turns instead
+-- of discarding a photo sent with no active event — see scanFlowService.ts.
+-- active_event_set_at is stamped alongside active_event_id (usersRepo.
+-- setActiveEvent) so event-lifetime expiry can be computed in app code.
+alter table public.users add column if not exists active_event_set_at timestamptz null;
+alter table public.users add column if not exists pending_front_media_id text null;
+alter table public.users add column if not exists pending_back_media_id text null;
+
+-- ── accounts: scan/event preferences ─────────────────────────────────────
+-- Account-wide (not per-channel) — set from either the bot's Account
+-- Settings menu or dashboard/'s Profile → Preferences page.
+alter table public.accounts add column if not exists scan_both_sides boolean not null default false;
+alter table public.accounts add column if not exists event_lifetime_hours integer null;
 
 -- ── events: location/date/thumbnail ──────────────────────────────────────
 alter table public.events add column if not exists location text null;
@@ -821,7 +847,17 @@ select
   coalesce(a.coin_balance, u.coin_balance) as effective_coin_balance,
   coalesce(a.blocked_at, u.blocked_at) as effective_blocked_at,
   coalesce(a.plan_id, u.plan_id) as effective_plan_id,
-  coalesce(a.plan_expires_at, u.plan_expires_at) as effective_plan_expires_at
+  coalesce(a.plan_expires_at, u.plan_expires_at) as effective_plan_expires_at,
+  -- Held-scan + event-lifetime + scan-both-sides state — see the
+  -- "users: held-scan + event-lifetime state" / "accounts: scan/event
+  -- preferences" blocks above. No legacy fallback needed for the account
+  -- columns (scan_both_sides/event_lifetime_hours): every bot user is
+  -- already required to be linked before any of this is reachable.
+  u.active_event_set_at,
+  u.pending_front_media_id,
+  u.pending_back_media_id,
+  a.scan_both_sides,
+  a.event_lifetime_hours
 from
   public.users u
   left join public.events e on e.id = u.active_event_id

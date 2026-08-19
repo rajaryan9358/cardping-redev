@@ -17,6 +17,8 @@ interface ServerAccount {
   plan_id: string | null;
   plan_expires_at: string | null;
   has_password: boolean;
+  scan_both_sides: boolean;
+  event_lifetime_hours: number | null;
 }
 
 interface ServerChannelLink {
@@ -44,6 +46,8 @@ function mapAccount(a: ServerAccount): Account {
     coinBalance: a.coin_balance,
     planId: a.plan_id,
     planExpiresAt: a.plan_expires_at,
+    scanBothSides: a.scan_both_sides,
+    eventLifetimeHours: a.event_lifetime_hours,
   };
 }
 

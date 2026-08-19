@@ -85,10 +85,27 @@ async function touchLastLogin(userId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Stamps active_event_set_at alongside active_event_id — the single choke
+ * point every "set the active event" path (typed name, picked from the
+ * recent-events list) goes through via eventService.ts, so event-lifetime
+ * expiry (see isEventExpired) can be computed off one timestamp regardless
+ * of how the event was set. */
 async function setActiveEvent(userId: string, eventId: string): Promise<void> {
   const { error } = await supabase
     .from("users")
-    .update({ active_event_id: eventId })
+    .update({ active_event_id: eventId, active_event_set_at: new Date().toISOString() })
+    .eq("id", userId);
+  if (error) throw error;
+}
+
+/** Holds a photo's channel media reference (WhatsApp mediaId / Telegram
+ * photoFileId) across turns instead of discarding it — see
+ * scanFlowService.ts. Pass null for either side to clear it (e.g. once the
+ * scan finishes and processes both, or resumes to completion). */
+async function setPendingMedia(userId: string, frontMediaId: string | null, backMediaId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("users")
+    .update({ pending_front_media_id: frontMediaId, pending_back_media_id: backMediaId })
     .eq("id", userId);
   if (error) throw error;
 }
@@ -142,6 +159,7 @@ export const usersRepo = {
   findById,
   findOrCreate,
   setActiveEvent,
+  setPendingMedia,
   setActiveVisitingCard,
   setState,
   setWriteEmail,

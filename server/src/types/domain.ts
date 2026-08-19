@@ -12,9 +12,17 @@ export type UserState =
   | "awaiting_event_name"
   | "awaiting_account_settings_choice"
   | "awaiting_email_review"
-  // Telegram-only: Cashfree payment links require a phone number, which a
-  // Telegram user doesn't inherently expose (unlike a WhatsApp `wa_id`).
-  | "awaiting_topup_phone";
+  // A photo was received with no active event (or the active one expired) —
+  // waiting on an event_pick:<id>/event_pick:new choice. See
+  // scanFlowService.ts; the pending media id lives on
+  // pending_front_media_id, not in this state itself.
+  | "awaiting_event_choice"
+  // scan_both_sides is on and the front photo was just captured — waiting
+  // on the back photo before finalizing the scan.
+  | "awaiting_back_photo"
+  // Waiting on a tap from the event-lifetime picker (1h/6h/.../Always),
+  // shown from the account-settings menu.
+  | "awaiting_event_lifetime_choice";
 
 export interface User {
   id: string;
@@ -74,6 +82,11 @@ export interface UserWithEvent {
   effective_blocked_at: string | null;
   effective_plan_id: string | null;
   effective_plan_expires_at: string | null;
+  active_event_set_at: string | null;
+  pending_front_media_id: string | null;
+  pending_back_media_id: string | null;
+  scan_both_sides: boolean | null;
+  event_lifetime_hours: number | null;
 }
 
 /** A dashboard login — deliberately separate from `User`/`UserWithEvent`
@@ -95,6 +108,8 @@ export interface Account {
   coin_balance: number;
   plan_id: string | null;
   plan_expires_at: string | null;
+  scan_both_sides: boolean;
+  event_lifetime_hours: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +162,8 @@ export interface VisitingCard {
   image_public_url: string | null;
   voice_note_public_url: string | null;
   extraction_confidence: number | null;
+  back_storage_path: string | null;
+  back_image_public_url: string | null;
 }
 
 export type TransactionType =

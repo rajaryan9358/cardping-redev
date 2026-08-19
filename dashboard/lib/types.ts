@@ -16,6 +16,8 @@ export interface Account {
   coinBalance: number;
   planId: string | null;
   planExpiresAt: string | null;
+  scanBothSides: boolean;
+  eventLifetimeHours: number | null;
 }
 
 export interface ChannelLink {

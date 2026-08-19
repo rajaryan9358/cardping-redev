@@ -1,6 +1,6 @@
 import { supabase } from "../client";
 
-export type OtpPurpose = "login" | "channel_link" | "channel_onboarding";
+export type OtpPurpose = "login" | "channel_link" | "channel_onboarding" | "magic_login";
 
 export interface OtpCodeRow {
   id: string;

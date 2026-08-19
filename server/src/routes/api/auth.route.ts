@@ -16,6 +16,7 @@ import {
 } from "../../services/authService";
 import { OtpNotConfiguredError, requestOtp, verifyOtp } from "../../services/otpService";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
+import * as magicLoginService from "../../services/magicLoginService";
 import { completeOnboarding } from "../../services/onboardingService";
 import { childLogger } from "../../lib/logger";
 import { parseBody } from "./validate";
@@ -182,6 +183,28 @@ authRouter.get("/auth/google/callback", async (req, res) => {
     log.error({ err }, "Google dashboard login callback failed");
     res.redirect("/login?error=google_auth_failed");
   }
+});
+
+/** Bot-issued auto-login link (Buy Credits / Subscribe from WhatsApp or
+ * Telegram) — see magicLoginService.ts. Unauthenticated by design: the
+ * token itself, sent to the account's own linked channel, is the proof of
+ * ownership, same trust model as the channel-onboarding link. */
+authRouter.get("/auth/magic-login", async (req, res) => {
+  const token = typeof req.query.token === "string" ? req.query.token : undefined;
+  const resolved = token ? await magicLoginService.resolveAndConsumeMagicLoginToken(token) : null;
+  if (!resolved) {
+    res.redirect("/login?error=link_expired");
+    return;
+  }
+
+  const account = await accountsRepo.findById(resolved.accountId);
+  if (!account || account.blocked_at) {
+    res.redirect("/login?error=account_blocked");
+    return;
+  }
+
+  await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+  res.redirect(resolved.destinationPath);
 });
 
 // ── WhatsApp OTP login ──────────────────────────────────────────────────

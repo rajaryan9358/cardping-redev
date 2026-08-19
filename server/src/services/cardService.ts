@@ -1,5 +1,5 @@
 import { visitingCardsRepo } from "../db/repositories/visitingCards.repo";
-import { extractCardFromImage } from "../integrations/openai/vision";
+import { extractCardFromImages } from "../integrations/openai/vision";
 import { supabaseStorage } from "../integrations/storage/supabaseStorage";
 import { Channel, ExtractedCard, VisitingCard } from "../types/domain";
 import { childLogger } from "../lib/logger";
@@ -13,6 +13,9 @@ export interface ProcessCardInput {
   imageId: string;
   imageBuffer: Buffer;
   mimeType: string;
+  backImageId?: string;
+  backImageBuffer?: Buffer;
+  backMimeType?: string;
 }
 
 export interface ProcessCardResult {
@@ -21,11 +24,17 @@ export interface ProcessCardResult {
 }
 
 /** The one place both bots turn a business-card photo into a
- * `visiting_cards` row: extract structured fields with GPT-4o vision,
- * persist the row, then upload the original photo to Supabase Storage and
- * link it back onto the row. */
+ * `visiting_cards` row: extract structured fields with GPT-4o vision
+ * (merging both sides in one call when a back image is present), persist
+ * the row, then upload the original photo(s) to Supabase Storage and link
+ * them back onto the row. */
 export async function processCardImage(input: ProcessCardInput): Promise<ProcessCardResult> {
-  const extracted = await extractCardFromImage(input.imageBuffer, input.mimeType);
+  const extracted = await extractCardFromImages(
+    input.imageBuffer,
+    input.mimeType,
+    input.backImageBuffer,
+    input.backMimeType,
+  );
 
   const card = await visitingCardsRepo.create({
     userId: input.userId,
@@ -45,6 +54,19 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
     // The card record and extracted contact details are already safely
     // saved — losing the source photo shouldn't fail the whole scan.
     log.error({ err, cardId: card.id }, "failed to upload card image to storage");
+  }
+
+  if (input.backImageBuffer && input.backImageId) {
+    try {
+      const { path, publicUrl } = await supabaseStorage.uploadCardImage(
+        input.userId,
+        input.backImageId,
+        input.backImageBuffer,
+      );
+      await visitingCardsRepo.setBackImageStorage(card.id, path, publicUrl);
+    } catch (err) {
+      log.error({ err, cardId: card.id }, "failed to upload back card image to storage");
+    }
   }
 
   return { card, extracted };

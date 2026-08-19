@@ -1,10 +1,10 @@
 import { telegramClient } from "../../../integrations/telegram/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
-import { createTopUpLink } from "../../../services/paymentService";
-import { isCashfreeEnabled } from "../../../config/env";
+import { createMagicLoginLink } from "../../../services/magicLoginService";
+import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { NormalizedTelegramMessage } from "../../../integrations/telegram/types";
 import { UserWithEvent } from "../../../types/domain";
-import { Copy } from "../messages";
+import { Copy, sendAccountSettingsMenu, sendEventPicker } from "../messages";
 import { Ids } from "../ids";
 
 export async function handleCallback(msg: NormalizedTelegramMessage, user: UserWithEvent): Promise<void> {
@@ -25,47 +25,31 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
         });
         return;
       }
-      await usersRepo.setState(user.user_id, "awaiting_event_name");
-      await telegramClient.sendMessage(chatId, Copy.askNewEventName);
+      await usersRepo.setState(user.user_id, "awaiting_event_choice");
+      await sendEventPicker(chatId, user.user_id);
       return;
 
     case Ids.eventChangeYes:
-      await usersRepo.setState(user.user_id, "awaiting_event_name");
-      await telegramClient.sendMessage(chatId, Copy.askNewEventName);
+      await usersRepo.setState(user.user_id, "awaiting_event_choice");
+      await sendEventPicker(chatId, user.user_id);
       return;
 
     case Ids.eventChangeNo:
       await telegramClient.sendMessage(chatId, Copy.keepingCurrentEvent(user.active_event_name ?? ""));
       return;
 
-    case Ids.menuBuyCredits:
-      if (!isCashfreeEnabled) {
-        await telegramClient.sendMessage(chatId, "Coin top-ups aren't configured on this server yet.");
-        return;
-      }
-      if (user.wa_id) {
-        // Already have a phone number on file (e.g. this person also uses
-        // the WhatsApp bot) — skip straight to generating the link.
-        const linkUrl = await createTopUpLink(user.user_id, user.wa_id);
-        await telegramClient.sendMessage(chatId, Copy.paymentLink(linkUrl));
-        return;
-      }
-      await usersRepo.setState(user.user_id, "awaiting_topup_phone");
-      await telegramClient.sendMessage(
-        chatId,
-        "What phone number (with country code) should the payment confirmation go to?",
-      );
+    case Ids.menuBuyCredits: {
+      const linkUrl = await createMagicLoginLink(user.account_id!, "/subscription/topup");
+      await telegramClient.sendMessage(chatId, Copy.buyCreditsLink(linkUrl));
       return;
+    }
 
-    case Ids.menuAccount:
+    case Ids.menuAccount: {
       await usersRepo.setState(user.user_id, "awaiting_account_settings_choice");
-      await telegramClient.sendMessage(chatId, Copy.accountSettingsPrompt, {
-        buttons: [
-          { text: "Connect Gmail", data: Ids.accountConnectGmail },
-          { text: "Check Credit", data: Ids.accountCheckCredit },
-        ],
-      });
+      const status = await getSubscriptionStatus(user);
+      await sendAccountSettingsMenu(chatId, status, Boolean(user.scan_both_sides), user.event_lifetime_hours);
       return;
+    }
 
     default:
       await telegramClient.sendMessage(chatId, "Let's start over — send /menu to see what I can do.");

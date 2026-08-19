@@ -4,6 +4,10 @@ import { otpCodesRepo } from "../db/repositories/otpCodes.repo";
 import { usersRepo } from "../db/repositories/users.repo";
 import { ChannelLink, ChannelLinkChannel } from "../types/domain";
 import * as channelLinkService from "./channelLinkService";
+import { whatsappClient } from "../integrations/whatsapp/client";
+import { telegramClient } from "../integrations/telegram/client";
+import { sendMainMenu as sendWhatsAppMenu } from "../bots/whatsapp/messages";
+import { sendMainMenu as sendTelegramMenu } from "../bots/telegram/messages";
 
 const ONBOARDING_LINK_TTL_MINUTES = 30;
 
@@ -64,7 +68,20 @@ export async function consumeOnboardingToken(token: string, accountId: string): 
   await otpCodesRepo.markConsumed(row.id);
   const { channel, channelIdentifier } = parseTarget(row.target);
   const user = await usersRepo.findOrCreate(channel, channelIdentifier, channelIdentifier);
-  return channelLinkService.linkChannel(accountId, user.user_id, channel, channelIdentifier, user.coin_balance);
+  const link = await channelLinkService.linkChannel(accountId, user.user_id, channel, channelIdentifier, user.coin_balance);
+
+  // By the time the user taps "Start scanning" on the dashboard's connected
+  // screen and lands back in the chat, the menu is already sitting there —
+  // no need to type anything to discover what the bot can do.
+  if (channel === "whatsapp") {
+    await whatsappClient.sendText(env.WHATSAPP_PHONE_NUMBER_ID, channelIdentifier, "🎉 You're all set!");
+    await sendWhatsAppMenu(env.WHATSAPP_PHONE_NUMBER_ID, channelIdentifier, "What would you like to do?");
+  } else {
+    await telegramClient.sendMessage(channelIdentifier, "🎉 You're all set!");
+    await sendTelegramMenu(channelIdentifier, "What would you like to do?");
+  }
+
+  return link;
 }
 
 /** Where "Start scanning" on the post-signup success screen sends the user

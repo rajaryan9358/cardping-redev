@@ -63,6 +63,18 @@ async function setImageStorage(
   if (error) throw error;
 }
 
+async function setBackImageStorage(
+  cardId: string,
+  storagePath: string,
+  publicUrl: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("visiting_cards")
+    .update({ back_storage_path: storagePath, back_image_public_url: publicUrl })
+    .eq("id", cardId);
+  if (error) throw error;
+}
+
 async function setVoiceNote(
   cardId: string,
   transcript: string,
@@ -258,6 +270,7 @@ export const visitingCardsRepo = {
   create,
   setMessageId,
   setImageStorage,
+  setBackImageStorage,
   setVoiceNote,
   findById,
   findByMessageId,

@@ -56,9 +56,9 @@ export async function handleText(msg: NormalizedTelegramMessage, user: UserWithE
 
   if (text?.trim() === "/start" || text?.trim() === "/menu") {
     const name = user.full_name ? `, ${user.full_name.split(" ")[0]}` : "";
-    await sendMainMenu(chatId, `Hi${name} 👋 What would you like to do?`);
+    await sendMainMenu(chatId, `Hi${name} 👋 What would you like to do?`, user.active_event_name);
     return;
   }
 
-  await sendMainMenu(chatId, "Not sure how to handle that — here's what I can do:");
+  await sendMainMenu(chatId, "Not sure how to handle that — here's what I can do:", user.active_event_name);
 }

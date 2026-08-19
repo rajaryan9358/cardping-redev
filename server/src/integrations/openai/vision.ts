@@ -48,16 +48,39 @@ Rules:
 - Phone numbers must be exactly as shown (with +, (), -, etc.).
 - Confidence must be between 0.5 and 1.0 based on clarity.`;
 
-export async function extractCardFromImage(imageBuffer: Buffer, mimeType: string): Promise<ExtractedCard> {
-  const base64 = imageBuffer.toString("base64");
+const DUAL_SIDE_PROMPT =
+  "\n\nThe two images are the front and back of the SAME business card. Combine information " +
+  "from both sides into one set of fields — if a field appears on either side, use it; if it " +
+  "appears on both, prefer the clearer/more complete value. Do not duplicate or list both.";
+
+/** `back` is optional — when present (scan_both_sides is on and a back
+ * photo was captured), both images go into the same GPT-4o call so the
+ * model merges them itself rather than the two extractions being combined
+ * after the fact. */
+export async function extractCardFromImages(
+  front: Buffer,
+  frontMimeType: string,
+  back?: Buffer,
+  backMimeType?: string,
+): Promise<ExtractedCard> {
+  const imageBlocks: Array<{ type: "image_url"; image_url: { url: string } }> = [
+    { type: "image_url", image_url: { url: `data:${frontMimeType};base64,${front.toString("base64")}` } },
+  ];
+  if (back && backMimeType) {
+    imageBlocks.push({
+      type: "image_url",
+      image_url: { url: `data:${backMimeType};base64,${back.toString("base64")}` },
+    });
+  }
+
   const response = await openai.chat.completions.create({
     model: env.OPENAI_VISION_MODEL,
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: EXTRACTION_PROMPT },
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+          { type: "text", text: EXTRACTION_PROMPT + (back ? DUAL_SIDE_PROMPT : "") },
+          ...imageBlocks,
         ],
       },
     ],
