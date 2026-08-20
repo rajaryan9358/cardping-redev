@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Activity, Bell, CreditCard, IdCard, Calendar, LogOut, Megaphone, ScrollText, SlidersHorizontal, Users } from "lucide-react";
+import { Activity, Bell, CreditCard, IdCard, Calendar, LogOut, Megaphone, ScrollText, SlidersHorizontal, Terminal, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { logoutAction } from "../../app/(protected)/actions";
 
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/env", label: "Env Variables", icon: SlidersHorizontal },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText },
+  { href: "/logs", label: "Logs", icon: Terminal },
 ];
 
 export function Sidebar({ adminEmail }: { adminEmail: string }) {
