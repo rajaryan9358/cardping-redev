@@ -1,5 +1,6 @@
 import { requireAdmin } from "../../lib/auth";
 import { AppShell } from "../../components/shell/AppShell";
+import { RouteRefresher } from "../../components/shell/RouteRefresher";
 
 // Every page under this layout reads live DB state (or, for /env, the
 // filesystem) on every request — Next's build-time prerender attempt can
@@ -10,5 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const admin = await requireAdmin();
-  return <AppShell adminEmail={admin.email}>{children}</AppShell>;
+  return (
+    <>
+      <RouteRefresher />
+      <AppShell adminEmail={admin.email}>{children}</AppShell>
+    </>
+  );
 }
