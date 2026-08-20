@@ -3,6 +3,7 @@ import { eventsRepo } from "../../db/repositories/events.repo";
 import { ExtractedCard } from "../../types/domain";
 import { SubscriptionStatus } from "../../services/subscriptionStatus";
 import { formatEventLifetimeRemaining } from "../../services/eventService";
+import { resolveUsersIdsFromChannelIdentity } from "../../services/accountScope";
 import { Ids } from "./ids";
 
 export async function sendMainMenu(
@@ -27,9 +28,13 @@ export async function sendMainMenu(
 /** Recent events + "+ New Event" — shown both from the menu's Set/Change
  * Event action and when a photo arrives with no active (or expired) event,
  * see scanFlowService.ts. Row ids for existing events are prefixed
- * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids. */
+ * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids.
+ * Pulled across every channel linked to the same account — an event
+ * created via Telegram is a valid choice here too, not just ones created
+ * from this WhatsApp identity. */
 export async function sendEventPicker(phoneNumberId: string, to: string, usersId: string): Promise<void> {
-  const events = await eventsRepo.listActiveForAccount([usersId]);
+  const usersIds = await resolveUsersIdsFromChannelIdentity(usersId);
+  const events = await eventsRepo.listActiveForAccount(usersIds);
   const rows = events
     // WhatsApp's interactive-list cap is 10 rows per section; "+ New Event"
     // takes one, so 9 is the true reachable max, not an arbitrary cutoff.

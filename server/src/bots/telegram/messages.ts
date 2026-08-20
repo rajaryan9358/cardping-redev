@@ -3,6 +3,7 @@ import { eventsRepo } from "../../db/repositories/events.repo";
 import { ExtractedCard } from "../../types/domain";
 import { SubscriptionStatus } from "../../services/subscriptionStatus";
 import { formatEventLifetimeRemaining } from "../../services/eventService";
+import { resolveUsersIdsFromChannelIdentity } from "../../services/accountScope";
 import { Ids } from "./ids";
 
 export async function sendMainMenu(chatId: string, greeting: string, activeEventName: string | null = null): Promise<void> {
@@ -20,9 +21,13 @@ export async function sendMainMenu(chatId: string, greeting: string, activeEvent
 /** Recent events + "+ New Event" — shown both from the menu's Set/Change
  * Event action and when a photo arrives with no active (or expired) event,
  * see scanFlowService.ts. Callback data for existing events is prefixed
- * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids. */
+ * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids.
+ * Pulled across every channel linked to the same account — an event
+ * created via WhatsApp is a valid choice here too, not just ones created
+ * from this Telegram identity. */
 export async function sendEventPicker(chatId: string, usersId: string): Promise<void> {
-  const events = await eventsRepo.listActiveForAccount([usersId]);
+  const usersIds = await resolveUsersIdsFromChannelIdentity(usersId);
+  const events = await eventsRepo.listActiveForAccount(usersIds);
   // Kept at parity with WhatsApp's 9-event cap (its interactive-list rows
   // are hard-capped at 10 including "+ New Event") even though Telegram's
   // inline keyboards have no such limit — consistent UX across channels.
