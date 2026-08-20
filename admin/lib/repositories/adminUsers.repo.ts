@@ -167,15 +167,19 @@ function matchesSearch(term: string, fields: (string | null)[]): boolean {
   return fields.some((f) => f?.toLowerCase().includes(needle));
 }
 
-async function listUsers({
+export type ListUsersFilterParams = Omit<ListUsersParams, "page" | "pageSize">;
+
+/** Fetches + filters + sorts every matching row, unpaginated — shared by
+ * listUsers (which slices a page off the end) and listUsersForExport
+ * (which returns everything, for a CSV that matches the current filters
+ * exactly, not just what's on screen). */
+async function buildFilteredUserRows({
   search,
   status,
   expiresBefore,
   expiresAfter,
   sort,
-  page,
-  pageSize,
-}: ListUsersParams): Promise<Paginated<AdminUserListRow>> {
+}: ListUsersFilterParams): Promise<AdminUserListRow[]> {
   const [{ data: accounts, error: accErr }, { data: links, error: linkErr }, { data: legacyUsers, error: userErr }] =
     await Promise.all([
       supabase.from("accounts").select("id, full_name, email, coin_balance, blocked_at, plan_id, plan_expires_at, created_at"),
@@ -274,8 +278,17 @@ async function listUsers({
     return ascending ? cmp : -cmp;
   });
 
-  const from = (page - 1) * pageSize;
-  return { rows: allRows.slice(from, from + pageSize), total: allRows.length };
+  return allRows;
+}
+
+async function listUsers(params: ListUsersParams): Promise<Paginated<AdminUserListRow>> {
+  const allRows = await buildFilteredUserRows(params);
+  const from = (params.page - 1) * params.pageSize;
+  return { rows: allRows.slice(from, from + params.pageSize), total: allRows.length };
+}
+
+async function listUsersForExport(params: ListUsersFilterParams): Promise<AdminUserListRow[]> {
+  return buildFilteredUserRows(params);
 }
 
 /** `id` is whatever the route was reached with — tries it as an accountId
@@ -524,6 +537,76 @@ async function setAccountMarketingOptIn(accountId: string, optIn: boolean): Prom
   if (error) throw error;
 }
 
+async function updateUserProfile(userId: string, patch: { full_name?: string; email?: string | null }): Promise<void> {
+  const { error } = await supabase.from("users").update(patch).eq("id", userId);
+  if (error) throw error;
+}
+
+/** Same as updateUserProfile, entered directly with an accountId — see
+ * setAccountBlocked's comment for why "account" kind rows need their own
+ * entry point instead of resolving through a channel identity. */
+async function updateAccountProfile(accountId: string, patch: { full_name?: string; email?: string | null }): Promise<void> {
+  const { error } = await supabase.from("accounts").update(patch).eq("id", accountId);
+  if (error) throw error;
+}
+
+/** Deletes a bare `users` row (an "unlinked_user" row, or one of an
+ * account's linked channel identities). `events.user_id`/
+ * `visiting_cards.user_id` are both ON DELETE CASCADE from `users`, so
+ * this unconditionally deletes that channel identity's events and cards
+ * too — there is no non-destructive alternative at the schema level. The
+ * UI's "also delete N events, M cards" checkbox for this row kind is
+ * therefore a confirmation gate, not a real branch — it must stay
+ * checked before the caller ever reaches this function. */
+async function deleteUser(userId: string): Promise<void> {
+  const { error } = await supabase.from("users").delete().eq("id", userId);
+  if (error) throw error;
+}
+
+/** Deletes an "account" row. Unlike deleteUser, this does NOT cascade to
+ * events/cards on its own — neither table has an FK to `accounts`, only
+ * to `users` — so by default this only removes the account + unlinks its
+ * channels + kills its sessions/invoices (all ON DELETE CASCADE from
+ * accounts), leaving the underlying `users` row(s) and their events/cards
+ * fully intact and reachable again as separate "unlinked_user" rows.
+ * `alsoDeleteLinkedUsersData: true` is the real branch the UI checkbox
+ * controls: it deletes the linked `users` row(s) too, which *then*
+ * cascades their events/cards via deleteUser's mechanism. */
+async function deleteAccount(accountId: string, alsoDeleteLinkedUsersData: boolean): Promise<void> {
+  if (alsoDeleteLinkedUsersData) {
+    const { data: links, error: linkErr } = await supabase.from("channel_links").select("users_id").eq("account_id", accountId);
+    if (linkErr) throw linkErr;
+    const usersIds = (links ?? []).map((l) => l.users_id);
+    if (usersIds.length > 0) {
+      const { error: usersErr } = await supabase.from("users").delete().in("id", usersIds);
+      if (usersErr) throw usersErr;
+    }
+  }
+  // Belt-and-suspenders alongside the transactions.account_id FK fix
+  // (schema.sql) — doesn't depend on that migration having landed yet.
+  const { error: txErr } = await supabase.from("transactions").update({ account_id: null }).eq("account_id", accountId);
+  if (txErr) throw txErr;
+
+  const { error } = await supabase.from("accounts").delete().eq("id", accountId);
+  if (error) throw error;
+}
+
+async function bulkDeleteUsers(userIds: string[]): Promise<void> {
+  if (userIds.length === 0) return;
+  const { error } = await supabase.from("users").delete().in("id", userIds);
+  if (error) throw error;
+}
+
+async function bulkDeleteAccounts(accountIds: string[], alsoDeleteLinkedUsersData: boolean): Promise<void> {
+  for (const accountId of accountIds) {
+    // eslint-disable-next-line no-await-in-loop -- each delete can cascade
+    // (channel_links/sessions/invoices, and optionally users/events/cards);
+    // running these concurrently risks interleaved partial cascades across
+    // rows that might share state, so this stays sequential.
+    await deleteAccount(accountId, alsoDeleteLinkedUsersData);
+  }
+}
+
 async function adjustCoins(userId: string, delta: number, reason: string) {
   const accountId = await resolveAccountId(userId);
   if (accountId) {
@@ -558,6 +641,7 @@ async function adjustAccountCoins(accountId: string, delta: number, reason: stri
 
 export const adminUsersRepo = {
   listUsers,
+  listUsersForExport,
   getUserDetail,
   getUserEvents,
   getUserCards,
@@ -569,4 +653,10 @@ export const adminUsersRepo = {
   setAccountMarketingOptIn,
   adjustCoins,
   adjustAccountCoins,
+  updateUserProfile,
+  updateAccountProfile,
+  deleteUser,
+  deleteAccount,
+  bulkDeleteUsers,
+  bulkDeleteAccounts,
 };

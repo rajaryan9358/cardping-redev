@@ -39,7 +39,7 @@ function initials(name: string): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function exportCsv(cards: VisitingCard[]) {
@@ -90,6 +90,11 @@ export function ScansExplorer({
 }: ScansExplorerProps) {
   const [cards, setCards] = useState(initialCards);
   const [query, setQuery] = useState(initialQuery);
+  // The browse/filter dropdown keeps every event (including inactive ones)
+  // so cards from a closed-out event stay findable; only the "move to
+  // event" picker below is restricted to active ones — an inactive event
+  // isn't a valid destination to (re-)assign a card into.
+  const activeEvents = events.filter((e) => e.activeStatus !== "inactive");
   const [eventFilter, setEventFilter] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState("");
@@ -407,7 +412,7 @@ async function confirmDelete() {
           className="w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
         >
           <option value="">Select an event...</option>
-          {events.map((event) => (
+          {activeEvents.map((event) => (
             <option key={event.id} value={event.id}>
               {event.name}
             </option>

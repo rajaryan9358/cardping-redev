@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
-import { MapPin, Users } from "lucide-react";
+import Link from "next/link";
+import { MapPin, Pencil, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { ScansExplorer } from "@/components/scans/ScansExplorer";
 import { allTags, getCards } from "@/lib/data/cards";
@@ -17,21 +19,30 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
-          <span>Conference</span>
-          <Badge tone={event.status === "active" ? "success" : "pending"}>{event.status}</Badge>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+            <span>Conference</span>
+            <Badge tone={event.status === "active" ? "success" : "pending"}>{event.status}</Badge>
+            {event.activeStatus === "inactive" && <Badge tone="pending">Inactive</Badge>}
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">{event.name}</h1>
+          <p className="flex items-center gap-1.5 text-sm text-muted">
+            {event.eventDate &&
+              new Date(event.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            {event.location && (
+              <>
+                <MapPin className="ml-1 size-3.5" strokeWidth={2} /> {event.location}
+              </>
+            )}
+          </p>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{event.name}</h1>
-        <p className="flex items-center gap-1.5 text-sm text-muted">
-          {event.eventDate &&
-            new Date(event.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-          {event.location && (
-            <>
-              <MapPin className="ml-1 size-3.5" strokeWidth={2} /> {event.location}
-            </>
-          )}
-        </p>
+        <Link href={`/events/${event.id}/edit`}>
+          <Button variant="secondary" className="gap-1.5">
+            <Pencil className="size-4" strokeWidth={2} />
+            Edit
+          </Button>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">

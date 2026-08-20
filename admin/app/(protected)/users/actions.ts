@@ -167,3 +167,73 @@ export async function adjustAccountCoinsAction(accountId: string, delta: number,
   });
   revalidatePath("/users");
 }
+
+export interface ProfilePatch {
+  full_name?: string;
+  email?: string | null;
+}
+
+export async function updateUserProfileAction(userId: string, patch: ProfilePatch): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.updateUserProfile(userId, patch);
+  await writeAuditLog({ adminUserId: admin.id, action: "user.update_profile", targetTable: "users", targetId: userId, detail: patch });
+  revalidatePath("/users");
+  revalidatePath(`/users/${userId}`);
+}
+
+/** Same as updateUserProfileAction, targeting an account directly — see
+ * setAccountBlockedAction's comment. */
+export async function updateAccountProfileAction(accountId: string, patch: ProfilePatch): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.updateAccountProfile(accountId, patch);
+  await writeAuditLog({ adminUserId: admin.id, action: "user.update_profile", targetTable: "accounts", targetId: accountId, detail: patch });
+  revalidatePath("/users");
+  revalidatePath(`/users/${accountId}`);
+}
+
+/** Deletes a bare `users` row (an "unlinked_user" row). Unconditionally
+ * cascades that channel identity's events and cards — see
+ * adminUsersRepo.deleteUser's comment. The caller's confirm dialog must
+ * have the user acknowledge that before this ever runs. */
+export async function deleteUserAction(userId: string): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.deleteUser(userId);
+  await writeAuditLog({ adminUserId: admin.id, action: "user.delete", targetTable: "users", targetId: userId });
+  revalidatePath("/users");
+}
+
+/** Deletes an "account" row. `alsoDeleteLinkedUsersData` is a real choice
+ * here — see adminUsersRepo.deleteAccount's comment. */
+export async function deleteAccountAction(accountId: string, alsoDeleteLinkedUsersData: boolean): Promise<void> {
+  const admin = await requireAdmin();
+  await adminUsersRepo.deleteAccount(accountId, alsoDeleteLinkedUsersData);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: "user.delete",
+    targetTable: "accounts",
+    targetId: accountId,
+    detail: { alsoDeleteLinkedUsersData },
+  });
+  revalidatePath("/users");
+}
+
+/** Bulk multi-select delete — `targets` mixes both row kinds (a page of
+ * the Users directory can show account and unlinked_user rows together),
+ * so each is dispatched individually rather than assuming one kind. */
+export async function bulkDeleteUsersAction(
+  targets: { id: string; kind: "account" | "unlinked_user" }[],
+  alsoDeleteLinkedData: boolean,
+): Promise<void> {
+  const admin = await requireAdmin();
+  const accountIds = targets.filter((t) => t.kind === "account").map((t) => t.id);
+  const userIds = targets.filter((t) => t.kind === "unlinked_user").map((t) => t.id);
+  if (accountIds.length > 0) await adminUsersRepo.bulkDeleteAccounts(accountIds, alsoDeleteLinkedData);
+  if (userIds.length > 0) await adminUsersRepo.bulkDeleteUsers(userIds);
+  await writeAuditLog({
+    adminUserId: admin.id,
+    action: "user.bulk_delete",
+    targetTable: "users",
+    detail: { accountIds, userIds, alsoDeleteLinkedData },
+  });
+  revalidatePath("/users");
+}

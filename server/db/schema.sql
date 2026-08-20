@@ -905,3 +905,36 @@ create unique index if not exists idx_channel_links_account_channel on public.ch
 -- logged in. Display-only distinction; magic-login sessions still work for
 -- auth and are still revoked by "log out everywhere".
 alter table public.sessions add column if not exists source text not null default 'login';
+
+-- ── events: manual active/inactive status ──────────────────────────────
+-- Distinct from the dashboard's date-derived display status
+-- (dashboard/lib/data/events.ts#deriveStatus) — this is a manual,
+-- owner/admin-controlled flag that only decides whether an event is
+-- offered as a choice in event pickers (bot's Change Event flow, the
+-- dashboard's "move card to event" picker). Defaults to 'active' so every
+-- existing row, and every future bot- or dashboard-created event,
+-- satisfies "created = active" with zero extra code.
+alter table public.events add column if not exists status text not null default 'active';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'events_status_check') then
+    alter table public.events
+      add constraint events_status_check check (status in ('active', 'inactive'));
+  end if;
+end $$;
+
+create index if not exists idx_events_status on public.events using btree (status);
+
+-- ── transactions.account_id: unblock admin account deletion ────────────
+-- Added earlier with no ON DELETE clause (defaults to RESTRICT), unlike
+-- every other FK into accounts (channel_links/sessions/invoices are all
+-- CASCADE). Deleting an accounts row with any transaction history would
+-- otherwise fail with a raw FK violation. Financial rows survive the
+-- account delete; they just lose this back-reference (transactions
+-- already carry user_id independently — see adminUsers.repo.ts's
+-- getUserTransactions, which already matches on either).
+alter table public.transactions drop constraint if exists transactions_account_id_fkey;
+alter table public.transactions
+  add constraint transactions_account_id_fkey
+  foreign key (account_id) references public.accounts (id) on delete set null;

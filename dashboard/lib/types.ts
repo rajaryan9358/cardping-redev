@@ -45,6 +45,11 @@ export interface EventRecord {
   leadCount: number;
   isMiscellaneous: boolean;
   status: "active" | "upcoming" | "past" | "draft";
+  // The owner's manual active/inactive toggle — unrelated to `status`
+  // above, which is a purely date-derived display label. This is what
+  // decides whether the event is offered in an event *picker* (bot's
+  // Change Event flow, the "move card to event" picker).
+  activeStatus: "active" | "inactive";
 }
 
 export interface VisitingCard {

@@ -3,16 +3,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { RefreshCw, X } from "lucide-react";
+import { Download, Eye, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
+import { TextField } from "../../../components/ui/TextField";
+import { Button } from "../../../components/ui/Button";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
 import { cn } from "@/lib/cn";
 import { AdminCardRow } from "../../../lib/repositories/adminCards.repo";
 import { nextSortValue } from "../../../lib/sort";
-import { formatDate } from "../../../lib/format";
-import { rerunExtractionAction } from "./actions";
+import { formatDateTime } from "../../../lib/format";
+import { rerunExtractionAction, deleteCardAction, bulkDeleteCardsAction } from "./actions";
+import { EditCardModal } from "./EditCardModal";
 
 const CONFIDENCE_OPTIONS = [
   { label: "≤50%", value: "0.5" },
@@ -30,6 +34,7 @@ export function CardsTable({
   pageSize,
   maxConfidence,
   sort,
+  search,
   userFilterName,
   eventFilterName,
 }: {
@@ -39,6 +44,7 @@ export function CardsTable({
   pageSize: number;
   maxConfidence: number;
   sort: string;
+  search: string;
   userFilterName: string | null;
   eventFilterName: string | null;
 }) {
@@ -46,11 +52,19 @@ export function CardsTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [rerunning, setRerunning] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editTarget, setEditTarget] = useState<AdminCardRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminCardRow | "bulk" | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  function navigate(next: { page?: number; maxConfidence?: string; sort?: string }) {
+  function navigate(next: { page?: number; maxConfidence?: string; sort?: string; search?: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.maxConfidence !== undefined) {
       params.set("maxConfidence", next.maxConfidence);
+      params.set("page", "1");
+    }
+    if (next.search !== undefined) {
+      params.set("search", next.search);
       params.set("page", "1");
     }
     if (next.sort !== undefined) {
@@ -74,6 +88,34 @@ export function CardsTable({
     }
   }
 
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      if (deleteTarget === "bulk") {
+        await bulkDeleteCardsAction(Array.from(selected));
+        setSelected(new Set());
+      } else if (deleteTarget) {
+        await deleteCardAction(deleteTarget.id);
+      }
+      router.refresh();
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+  }
+
   function clearNarrowingFilters(): string {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("userIds");
@@ -86,6 +128,20 @@ export function CardsTable({
 
   return (
     <div className="flex flex-col gap-4">
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-white">
+          <div className="flex items-center gap-4 text-sm">
+            <span className="font-semibold">{selected.size} selected</span>
+            <button type="button" onClick={() => setSelected(new Set())} className="flex items-center gap-1 text-white/70 hover:text-white">
+              <X className="size-3.5" /> Clear
+            </button>
+          </div>
+          <Button variant="dangerSolid" className="gap-1.5 py-1.5" onClick={() => setDeleteTarget("bulk")}>
+            <Trash2 className="size-3.5" strokeWidth={2} /> Delete
+          </Button>
+        </div>
+      )}
+
       {(userFilterName || eventFilterName) && (
         <div className="flex flex-wrap gap-2">
           {userFilterName && (
@@ -106,6 +162,25 @@ export function CardsTable({
           )}
         </div>
       )}
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = new FormData(e.currentTarget).get("search");
+            navigate({ search: String(value ?? "") });
+          }}
+          className="max-w-sm"
+        >
+          <TextField name="search" label="Search" placeholder="Name, company, email, or phone" defaultValue={search} />
+        </form>
+        <a href={`/admin/cards/export?${searchParams.toString()}`}>
+          <Button variant="secondary" className="gap-1.5">
+            <Download className="size-4" strokeWidth={2} />
+            Export CSV
+          </Button>
+        </a>
+      </div>
 
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold tracking-wide text-muted-2">Confidence at or below</span>
@@ -128,6 +203,14 @@ export function CardsTable({
 
       <TableCard>
         <TableHeaderRow>
+          <Th className="flex-none w-10">
+            <input
+              type="checkbox"
+              checked={rows.length > 0 && selected.size === rows.length}
+              onChange={toggleAll}
+              className="size-4 rounded border-border text-accent"
+            />
+          </Th>
           <Th>Card</Th>
           <Th>Scanned by</Th>
           <Th>Channel</Th>
@@ -140,8 +223,18 @@ export function CardsTable({
         )}
         {rows.map((card) => (
           <Tr key={card.id}>
+            <Td className="flex-none w-10">
+              <input
+                type="checkbox"
+                checked={selected.has(card.id)}
+                onChange={() => toggle(card.id)}
+                className="size-4 rounded border-border text-accent"
+              />
+            </Td>
             <Td>
-              <div className="font-medium text-ink">{card.full_name || "—"}</div>
+              <Link href={`/cards/${card.id}`} className="font-medium text-ink hover:underline">
+                {card.full_name || "—"}
+              </Link>
               <div className="text-xs text-muted">{card.company_name || "—"}</div>
             </Td>
             <Td>{card.user?.full_name || card.user?.email || "—"}</Td>
@@ -149,16 +242,28 @@ export function CardsTable({
             <Td align="right">
               {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
             </Td>
-            <Td align="right">{formatDate(card.created_at)}</Td>
+            <Td align="right">{formatDateTime(card.created_at)}</Td>
             <Td align="right">
               <div className="flex justify-end">
                 <RowActionsMenu
                   actions={[
                     {
+                      label: "View",
+                      icon: <Eye className="size-3.5" strokeWidth={2} />,
+                      onClick: () => (window.location.href = `/admin/cards/${card.id}`),
+                    },
+                    {
                       label: rerunning === card.id ? "Re-running…" : "Re-run extraction",
                       icon: <RefreshCw className="size-3.5" strokeWidth={2} />,
                       onClick: () => handleRerun(card.id),
                       disabled: rerunning === card.id,
+                    },
+                    { label: "Edit", icon: <Pencil className="size-3.5" strokeWidth={2} />, onClick: () => setEditTarget(card) },
+                    {
+                      label: "Delete",
+                      icon: <Trash2 className="size-3.5" strokeWidth={2} />,
+                      onClick: () => setDeleteTarget(card),
+                      tone: "danger",
                     },
                   ]}
                 />
@@ -174,6 +279,18 @@ export function CardsTable({
           onPageChange={(p) => navigate({ page: p })}
         />
       </TableCard>
+
+      <EditCardModal target={editTarget} onClose={() => setEditTarget(null)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget === "bulk" ? `Delete ${selected.size} card${selected.size === 1 ? "" : "s"}?` : `Delete this card?`}
+        description="This can't be undone."
+        confirmLabel="Delete"
+        confirmDisabled={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

@@ -6,7 +6,7 @@ export interface WriteAuditLogInput {
   action: string;
   targetTable?: string;
   targetId?: string;
-  detail?: Record<string, unknown>;
+  detail?: object;
 }
 
 /** Every mutating Server Action in this app calls this — see the plan's

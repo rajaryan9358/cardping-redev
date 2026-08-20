@@ -10,10 +10,15 @@ export interface AdminEventRow {
   user_id: string | null;
   owner: { full_name: string | null; email: string | null } | null;
   cardCount: number;
+  status: "active" | "inactive";
+  location: string | null;
+  event_date: string | null;
 }
 
 export interface ListEventsParams {
-  ownerSearch?: string;
+  // Matches an event's own name as well as its owner's name/email —
+  // "ownerSearch" was renamed once it stopped being owner-only.
+  search?: string;
   sort?: string;
   page: number;
   pageSize: number;
@@ -58,10 +63,15 @@ async function resolveOwners(
  * filter, since matching against a joined table's columns through
  * PostgREST's embed-filter syntax is fragile; filtering in memory after
  * the join is simpler and just as correct here. */
-async function listEvents({ ownerSearch, sort, page, pageSize }: ListEventsParams): Promise<Paginated<AdminEventRow>> {
+export type ListEventsFilterParams = Omit<ListEventsParams, "page" | "pageSize">;
+
+/** Fetches + filters + sorts every matching row, unpaginated — shared by
+ * listEvents (which slices a page off the end) and listEventsForExport
+ * (which returns everything, matching the current filters exactly). */
+async function buildFilteredEventRows({ search, sort }: ListEventsFilterParams): Promise<AdminEventRow[]> {
   const { data, error } = await supabase
     .from("events")
-    .select("id, name, created_at, user_id, owner:users!events_user_id_fkey(full_name, email)")
+    .select("id, name, created_at, user_id, status, location, event_date, owner:users!events_user_id_fkey(full_name, email)")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -75,10 +85,11 @@ async function listEvents({ ownerSearch, sort, page, pageSize }: ListEventsParam
     owner: (event.user_id && resolvedOwners.get(event.user_id)) || event.owner,
   }));
 
-  const term = ownerSearch?.trim().toLowerCase();
+  const term = search?.trim().toLowerCase();
   if (term) {
     events = events.filter(
       (event) =>
+        event.name.toLowerCase().includes(term) ||
         event.owner?.full_name?.toLowerCase().includes(term) ||
         event.owner?.email?.toLowerCase().includes(term),
     );
@@ -109,9 +120,17 @@ async function listEvents({ ownerSearch, sort, page, pageSize }: ListEventsParam
     });
   }
 
-  const total = rows.length;
-  const from = (page - 1) * pageSize;
-  return { rows: rows.slice(from, from + pageSize), total };
+  return rows;
+}
+
+async function listEvents(params: ListEventsParams): Promise<Paginated<AdminEventRow>> {
+  const rows = await buildFilteredEventRows(params);
+  const from = (params.page - 1) * params.pageSize;
+  return { rows: rows.slice(from, from + params.pageSize), total: rows.length };
+}
+
+async function listEventsForExport(params: ListEventsFilterParams): Promise<AdminEventRow[]> {
+  return buildFilteredEventRows(params);
 }
 
 async function getEventDetail(eventId: string) {
@@ -139,8 +158,43 @@ async function getEventCards(eventId: string) {
   return data ?? [];
 }
 
+async function updateEvent(
+  eventId: string,
+  patch: { name?: string; location?: string | null; event_date?: string | null; status?: "active" | "inactive" },
+): Promise<void> {
+  const { error } = await supabase.from("events").update(patch).eq("id", eventId);
+  if (error) throw error;
+}
+
+/** `visiting_cards.event_id` is ON DELETE SET NULL, so deleting an event
+ * by default just orphans its cards (they survive, event_id -> null) —
+ * `alsoDeleteCards: true` is the real branch the UI checkbox controls,
+ * explicitly deleting them first instead of relying on that default. */
+async function deleteEvent(eventId: string, alsoDeleteCards: boolean): Promise<void> {
+  if (alsoDeleteCards) {
+    const { error: cardsErr } = await supabase.from("visiting_cards").delete().eq("event_id", eventId);
+    if (cardsErr) throw cardsErr;
+  }
+  const { error } = await supabase.from("events").delete().eq("id", eventId);
+  if (error) throw error;
+}
+
+async function bulkDeleteEvents(eventIds: string[], alsoDeleteCards: boolean): Promise<void> {
+  if (eventIds.length === 0) return;
+  if (alsoDeleteCards) {
+    const { error: cardsErr } = await supabase.from("visiting_cards").delete().in("event_id", eventIds);
+    if (cardsErr) throw cardsErr;
+  }
+  const { error } = await supabase.from("events").delete().in("id", eventIds);
+  if (error) throw error;
+}
+
 export const adminEventsRepo = {
   listEvents,
+  listEventsForExport,
   getEventDetail,
   getEventCards,
+  updateEvent,
+  deleteEvent,
+  bulkDeleteEvents,
 };

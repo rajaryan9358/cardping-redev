@@ -48,3 +48,41 @@ export async function rerunExtractionAction(cardId: string): Promise<void> {
 
   revalidatePath("/cards");
 }
+
+export interface CardFieldsPatch {
+  full_name?: string | null;
+  position?: string | null;
+  company_name?: string | null;
+  business_email?: string | null;
+  personal_email?: string | null;
+  phone1?: string | null;
+  phone2?: string | null;
+  website?: string | null;
+  address?: string | null;
+  linkedin?: string | null;
+  twitter?: string | null;
+  facebook?: string | null;
+  instagram?: string | null;
+  transcribed_note?: string | null;
+}
+
+export async function updateCardAction(cardId: string, patch: CardFieldsPatch): Promise<void> {
+  const admin = await requireAdmin();
+  await adminCardsRepo.updateExtractedFields(cardId, patch as Record<string, unknown>);
+  await writeAuditLog({ adminUserId: admin.id, action: "card.update", targetTable: "visiting_cards", targetId: cardId, detail: patch });
+  revalidatePath("/cards");
+}
+
+export async function deleteCardAction(cardId: string): Promise<void> {
+  const admin = await requireAdmin();
+  await adminCardsRepo.deleteCard(cardId);
+  await writeAuditLog({ adminUserId: admin.id, action: "card.delete", targetTable: "visiting_cards", targetId: cardId });
+  revalidatePath("/cards");
+}
+
+export async function bulkDeleteCardsAction(cardIds: string[]): Promise<void> {
+  const admin = await requireAdmin();
+  await adminCardsRepo.bulkDeleteCards(cardIds);
+  await writeAuditLog({ adminUserId: admin.id, action: "card.bulk_delete", targetTable: "visiting_cards", detail: { cardIds } });
+  revalidatePath("/cards");
+}

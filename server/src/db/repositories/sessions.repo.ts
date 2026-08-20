@@ -86,6 +86,7 @@ async function listForAccount(accountId: string): Promise<SessionRow[]> {
     .from("sessions")
     .select("id, account_id, device_label, user_agent, created_at, last_seen_at, expires_at, source")
     .eq("account_id", accountId)
+    .neq("source", "magic_login")
     .order("last_seen_at", { ascending: false });
   if (error) throw error;
   return data as SessionRow[];

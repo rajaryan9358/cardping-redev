@@ -10,6 +10,7 @@ export const mockEvents: EventRecord[] = [
     leadCount: 342,
     isMiscellaneous: false,
     status: "active",
+    activeStatus: "active",
   },
   {
     id: "evt_founders",
@@ -20,6 +21,7 @@ export const mockEvents: EventRecord[] = [
     leadCount: 58,
     isMiscellaneous: false,
     status: "upcoming",
+    activeStatus: "active",
   },
   {
     id: "evt_websummit",
@@ -30,6 +32,7 @@ export const mockEvents: EventRecord[] = [
     leadCount: 121,
     isMiscellaneous: false,
     status: "past",
+    activeStatus: "active",
   },
   {
     id: "evt_saas",
@@ -40,6 +43,7 @@ export const mockEvents: EventRecord[] = [
     leadCount: 0,
     isMiscellaneous: false,
     status: "draft",
+    activeStatus: "active",
   },
   {
     id: "evt_misc",
@@ -50,5 +54,6 @@ export const mockEvents: EventRecord[] = [
     leadCount: 34,
     isMiscellaneous: true,
     status: "active",
+    activeStatus: "active",
   },
 ];

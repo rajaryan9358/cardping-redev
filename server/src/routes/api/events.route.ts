@@ -64,6 +64,7 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   location: z.string().nullable().optional(),
   eventDate: z.string().nullable().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
 });
 
 eventsRouter.patch("/events/:id", requireSession, requireActivePlanOrTrial, async (req, res) => {
@@ -76,6 +77,7 @@ eventsRouter.patch("/events/:id", requireSession, requireActivePlanOrTrial, asyn
       name: body.name,
       location: body.location,
       event_date: body.eventDate,
+      status: body.status,
     });
     if (!event) {
       res.status(404).json({ error: "not_found" });

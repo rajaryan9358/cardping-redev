@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { adminEventsRepo } from "../../../../lib/repositories/adminEvents.repo";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../../components/ui/Table";
-import { formatDate } from "../../../../lib/format";
+import { formatDate, formatDateTime } from "../../../../lib/format";
 
 export default async function EventDetailPage({ params }: { params: { eventId: string } }) {
   const event = await adminEventsRepo.getEventDetail(params.eventId);
@@ -50,7 +50,7 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
             <Td align="right">
               {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
             </Td>
-            <Td align="right">{formatDate(card.created_at)}</Td>
+            <Td align="right">{formatDateTime(card.created_at)}</Td>
           </Tr>
         ))}
       </TableCard>

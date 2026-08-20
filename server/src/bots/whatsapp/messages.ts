@@ -29,9 +29,11 @@ export async function sendMainMenu(
  * see scanFlowService.ts. Row ids for existing events are prefixed
  * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids. */
 export async function sendEventPicker(phoneNumberId: string, to: string, usersId: string): Promise<void> {
-  const events = await eventsRepo.listForAccount([usersId]);
+  const events = await eventsRepo.listActiveForAccount([usersId]);
   const rows = events
-    .slice(0, 8)
+    // WhatsApp's interactive-list cap is 10 rows per section; "+ New Event"
+    // takes one, so 9 is the true reachable max, not an arbitrary cutoff.
+    .slice(0, 9)
     .map((e) => ({ id: `${Ids.eventPickPrefix}${e.id}`, title: e.name, description: "" }));
   rows.push({ id: Ids.eventPickerNew, title: "+ New Event", description: "Create and switch to a new event" });
   await whatsappClient.sendList(phoneNumberId, to, Copy.eventPickerPrompt, "Choose an event", rows);

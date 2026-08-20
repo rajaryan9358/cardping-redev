@@ -110,7 +110,14 @@ export function CardDetailClient({
             {card.jobTitle} {card.companyName && `at ${card.companyName}`}
           </p>
           <p className="pt-1 text-xs text-muted">
-            Captured {new Date(card.scannedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            Captured{" "}
+            {new Date(card.scannedAt).toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
             {" · "}Source: {card.eventName}
             {" · "}Uploaded via {card.uploadedBy === "whatsapp" ? "WhatsApp" : "Telegram"}
           </p>

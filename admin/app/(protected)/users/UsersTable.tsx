@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2, IdCard } from "lucide-react";
+import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2, IdCard, Pencil, Trash2, X, Download } from "lucide-react";
+import { Button } from "../../../components/ui/Button";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
@@ -22,9 +23,13 @@ import {
   sendLowBalanceAlertAction,
   adjustUserCoinsAction,
   adjustAccountCoinsAction,
+  deleteUserAction,
+  deleteAccountAction,
+  bulkDeleteUsersAction,
 } from "./actions";
 import { setUserPlanAction, setAccountPlanAction } from "../subscriptions/actions";
 import { AdjustCoinsModal } from "./AdjustCoinsModal";
+import { EditUserModal } from "./EditUserModal";
 import { ChangePlanModal } from "../../../components/subscriptions/ChangePlanModal";
 import { SendMessageModal, SendMessageTarget } from "./SendMessageModal";
 
@@ -80,8 +85,44 @@ export function UsersTable({
   const [coinsTarget, setCoinsTarget] = useState<AdminUserListRow | null>(null);
   const [planTarget, setPlanTarget] = useState<AdminUserListRow | null>(null);
   const [messageTarget, setMessageTarget] = useState<AdminUserListRow | null>(null);
+  const [editTarget, setEditTarget] = useState<AdminUserListRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserListRow | "bulk" | null>(null);
+  const [deleteAck, setDeleteAck] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [alertingFor, setAlertingFor] = useState<string | null>(null);
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      if (deleteTarget === "bulk") {
+        const targets = rows.filter((r) => selected.has(r.id)).map((r) => ({ id: r.id, kind: r.kind }));
+        await bulkDeleteUsersAction(targets, deleteAck);
+        setSelected(new Set());
+      } else if (deleteTarget) {
+        if (deleteTarget.kind === "account") await deleteAccountAction(deleteTarget.id, deleteAck);
+        else await deleteUserAction(deleteTarget.id);
+      }
+      router.refresh();
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+      setDeleteAck(false);
+    }
+  }
 
   function navigate(next: {
     page?: number;
@@ -135,20 +176,42 @@ export function UsersTable({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() => navigate({ status: tab.value })}
-            className={cn(
-              "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-              status === tab.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-white">
+          <div className="flex items-center gap-4 text-sm">
+            <span className="font-semibold">{selected.size} selected</span>
+            <button type="button" onClick={() => setSelected(new Set())} className="flex items-center gap-1 text-white/70 hover:text-white">
+              <X className="size-3.5" /> Clear
+            </button>
+          </div>
+          <Button variant="dangerSolid" className="gap-1.5 py-1.5" onClick={() => setDeleteTarget("bulk")}>
+            <Trash2 className="size-3.5" strokeWidth={2} /> Delete
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => navigate({ status: tab.value })}
+              className={cn(
+                "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                status === tab.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <a href={`/admin/users/export?${searchParams.toString()}`}>
+          <Button variant="secondary" className="gap-1.5">
+            <Download className="size-4" strokeWidth={2} />
+            Export CSV
+          </Button>
+        </a>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -225,6 +288,14 @@ export function UsersTable({
 
       <TableCard>
         <TableHeaderRow>
+          <Th className="flex-none w-10">
+            <input
+              type="checkbox"
+              checked={rows.length > 0 && selected.size === rows.length}
+              onChange={toggleAll}
+              className="size-4 rounded border-border text-accent"
+            />
+          </Th>
           <Th>User</Th>
           <Th>Channels</Th>
           <SortableTh field="coin_balance" label="Coins" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
@@ -236,6 +307,14 @@ export function UsersTable({
         {rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No users found.</p>}
         {rows.map((user) => (
           <Tr key={user.id}>
+            <Td className="flex-none w-10">
+              <input
+                type="checkbox"
+                checked={selected.has(user.id)}
+                onChange={() => toggle(user.id)}
+                className="size-4 rounded border-border text-accent"
+              />
+            </Td>
             <Td>
               <Link href={`/users/${user.id}`} className="font-medium text-ink hover:underline">
                 {user.full_name || "Unnamed"}
@@ -298,6 +377,13 @@ export function UsersTable({
                       ),
                       onClick: () => setBlockTarget(user),
                       tone: user.effective_blocked_at ? "default" : "danger",
+                    },
+                    { label: "Edit profile", icon: <Pencil className="size-3.5" strokeWidth={2} />, onClick: () => setEditTarget(user) },
+                    {
+                      label: "Delete",
+                      icon: <Trash2 className="size-3.5" strokeWidth={2} />,
+                      onClick: () => setDeleteTarget(user),
+                      tone: "danger",
                     },
                   ]}
                 />
@@ -364,6 +450,44 @@ export function UsersTable({
             : null
         }
         onClose={() => setMessageTarget(null)}
+      />
+
+      <EditUserModal target={editTarget} onClose={() => setEditTarget(null)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={
+          deleteTarget === "bulk"
+            ? `Delete ${selected.size} user${selected.size === 1 ? "" : "s"}?`
+            : `Delete ${deleteTarget?.full_name || "this user"}?`
+        }
+        description={
+          <div className="flex flex-col gap-3">
+            <p>This can't be undone.</p>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={deleteAck}
+                onChange={(e) => setDeleteAck(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border text-accent"
+              />
+              <span>
+                {deleteTarget === "bulk"
+                  ? "Also permanently delete events and cards for everyone selected — required for anyone with no dashboard account (their data cascades unconditionally); optional for the rest, who'd otherwise just be unlinked and kept."
+                  : deleteTarget?.kind === "account"
+                    ? "Also permanently delete this person's linked events and cards — otherwise they're kept, just unlinked from this account."
+                    : "This will also permanently delete this person's events and cards — check to confirm you understand."}
+              </span>
+            </label>
+          </div>
+        }
+        confirmLabel="Delete"
+        confirmDisabled={!deleteAck || deleting}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setDeleteAck(false);
+        }}
+        onConfirm={confirmDelete}
       />
     </div>
   );

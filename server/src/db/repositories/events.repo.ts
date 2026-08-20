@@ -28,14 +28,34 @@ export interface DashboardEventRow {
   event_date: string | null;
   thumbnail_public_url: string | null;
   created_at: string;
+  status: "active" | "inactive";
 }
+
+const DASHBOARD_EVENT_COLUMNS = "id, name, location, event_date, thumbnail_public_url, created_at, status";
 
 async function listForAccount(usersIds: string[]): Promise<DashboardEventRow[]> {
   if (usersIds.length === 0) return [];
   const { data, error } = await supabase
     .from("events")
-    .select("id, name, location, event_date, thumbnail_public_url, created_at")
+    .select(DASHBOARD_EVENT_COLUMNS)
     .in("user_id", usersIds)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as DashboardEventRow[];
+}
+
+/** Same as listForAccount but restricted to status='active' — for event
+ * *pickers* (bot's Change Event flow, dashboard's "move card to event"
+ * picker), which shouldn't offer an event the owner has deliberately
+ * deactivated. listForAccount stays unfiltered since the dashboard's own
+ * Events page still needs to show/manage inactive events. */
+async function listActiveForAccount(usersIds: string[]): Promise<DashboardEventRow[]> {
+  if (usersIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("events")
+    .select(DASHBOARD_EVENT_COLUMNS)
+    .in("user_id", usersIds)
+    .eq("status", "active")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as DashboardEventRow[];
@@ -45,7 +65,7 @@ async function findByIdForAccount(eventId: string, usersIds: string[]): Promise<
   if (usersIds.length === 0) return null;
   const { data, error } = await supabase
     .from("events")
-    .select("id, name, location, event_date, thumbnail_public_url, created_at")
+    .select(DASHBOARD_EVENT_COLUMNS)
     .eq("id", eventId)
     .in("user_id", usersIds)
     .maybeSingle();
@@ -59,6 +79,7 @@ export interface EventUpdateInput {
   event_date?: string | null;
   thumbnail_path?: string | null;
   thumbnail_public_url?: string | null;
+  status?: "active" | "inactive";
 }
 
 /** For the dashboard's "create event" flow — same table, but a dashboard
@@ -71,7 +92,7 @@ async function createForUsersId(usersId: string, input: { name: string } & Event
   const { data, error } = await supabase
     .from("events")
     .insert({ user_id: usersId, ...input })
-    .select("id, name, location, event_date, thumbnail_public_url, created_at")
+    .select(DASHBOARD_EVENT_COLUMNS)
     .single();
   if (error) throw error;
   return data as DashboardEventRow;
@@ -84,7 +105,7 @@ async function updateForAccount(eventId: string, usersIds: string[], patch: Even
     .update(patch)
     .eq("id", eventId)
     .in("user_id", usersIds)
-    .select("id, name, location, event_date, thumbnail_public_url, created_at")
+    .select(DASHBOARD_EVENT_COLUMNS)
     .maybeSingle();
   if (error) throw error;
   return data as DashboardEventRow | null;
@@ -105,6 +126,7 @@ export const eventsRepo = {
   create,
   findById,
   listForAccount,
+  listActiveForAccount,
   findByIdForAccount,
   createForUsersId,
   updateForAccount,

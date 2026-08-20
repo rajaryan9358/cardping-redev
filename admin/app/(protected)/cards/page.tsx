@@ -2,7 +2,7 @@ import { adminCardsRepo } from "../../../lib/repositories/adminCards.repo";
 import { CardsTable } from "./CardsTable";
 
 const PAGE_SIZE = 20;
-const DEFAULT_MAX_CONFIDENCE = 0.7;
+const DEFAULT_MAX_CONFIDENCE = 1;
 
 export default async function CardsPage({
   searchParams,
@@ -15,6 +15,7 @@ export default async function CardsPage({
     userName?: string;
     eventId?: string;
     eventName?: string;
+    search?: string;
   };
 }) {
   const page = Math.max(1, Number(searchParams.page) || 1);
@@ -22,10 +23,12 @@ export default async function CardsPage({
   const sort = searchParams.sort || undefined;
   const userIds = searchParams.userIds ? searchParams.userIds.split(",").filter(Boolean) : undefined;
   const eventId = searchParams.eventId || undefined;
+  const search = searchParams.search || undefined;
   const { rows, total } = await adminCardsRepo.listLowConfidenceCards({
     maxConfidence,
     userIds,
     eventId,
+    search,
     sort,
     page,
     pageSize: PAGE_SIZE,
@@ -36,7 +39,7 @@ export default async function CardsPage({
       <div>
         <h1 className="text-2xl font-semibold text-ink">Cards</h1>
         <p className="mt-1 text-sm text-muted">
-          {total} at or below {Math.round(maxConfidence * 100)}% confidence
+          {maxConfidence >= 1 ? `${total} cards` : `${total} at or below ${Math.round(maxConfidence * 100)}% confidence`}
         </p>
       </div>
       <CardsTable
@@ -46,6 +49,7 @@ export default async function CardsPage({
         pageSize={PAGE_SIZE}
         maxConfidence={maxConfidence}
         sort={sort ?? ""}
+        search={search ?? ""}
         userFilterName={userIds && userIds.length > 0 ? searchParams.userName || "this person" : null}
         eventFilterName={eventId ? searchParams.eventName || "this event" : null}
       />

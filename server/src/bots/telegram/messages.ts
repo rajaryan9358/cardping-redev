@@ -22,8 +22,11 @@ export async function sendMainMenu(chatId: string, greeting: string, activeEvent
  * see scanFlowService.ts. Callback data for existing events is prefixed
  * dynamically (Ids.eventPickPrefix + eventId) rather than fixed Ids. */
 export async function sendEventPicker(chatId: string, usersId: string): Promise<void> {
-  const events = await eventsRepo.listForAccount([usersId]);
-  const rows = events.slice(0, 8).map((e) => [{ text: e.name, data: `${Ids.eventPickPrefix}${e.id}` }]);
+  const events = await eventsRepo.listActiveForAccount([usersId]);
+  // Kept at parity with WhatsApp's 9-event cap (its interactive-list rows
+  // are hard-capped at 10 including "+ New Event") even though Telegram's
+  // inline keyboards have no such limit — consistent UX across channels.
+  const rows = events.slice(0, 9).map((e) => [{ text: e.name, data: `${Ids.eventPickPrefix}${e.id}` }]);
   rows.push([{ text: "+ New Event", data: Ids.eventPickerNew }]);
   await telegramClient.sendMessage(chatId, Copy.eventPickerPrompt, { buttonRows: rows });
 }

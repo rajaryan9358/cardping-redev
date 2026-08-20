@@ -5,7 +5,7 @@ import { adminUsersRepo } from "../../../../lib/repositories/adminUsers.repo";
 import { env } from "../../../../lib/env";
 import { Badge } from "../../../../components/ui/Badge";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../../components/ui/Table";
-import { formatDate } from "../../../../lib/format";
+import { formatDate, formatDateTime } from "../../../../lib/format";
 import { UserDetailActions } from "./UserDetailActions";
 
 export default async function UserDetailPage({ params }: { params: { userId: string } }) {
@@ -115,7 +115,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
               <Td align="right">
                 {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
               </Td>
-              <Td align="right">{formatDate(card.created_at)}</Td>
+              <Td align="right">{formatDateTime(card.created_at)}</Td>
             </Tr>
           ))}
         </TableCard>

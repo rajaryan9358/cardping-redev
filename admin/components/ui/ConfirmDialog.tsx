@@ -9,6 +9,11 @@ interface ConfirmDialogProps {
   description: React.ReactNode;
   confirmLabel?: string;
   danger?: boolean;
+  // For deletes with cascade consequences (e.g. "also delete N events, M
+  // cards") — the caller renders the checkbox itself as part of
+  // `description` and gates this on its checked state, so the Confirm
+  // button can't be clicked before the consequence is acknowledged.
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -21,6 +26,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirm",
   danger = true,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -32,13 +38,13 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button variant={danger ? "dangerSolid" : "primary"} onClick={onConfirm}>
+          <Button variant={danger ? "dangerSolid" : "primary"} onClick={onConfirm} disabled={confirmDisabled}>
             {confirmLabel}
           </Button>
         </>
       }
     >
-      <p className="text-sm text-muted">{description}</p>
+      <div className="text-sm text-muted">{description}</div>
     </Modal>
   );
 }

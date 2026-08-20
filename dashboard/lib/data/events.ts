@@ -12,6 +12,7 @@ interface ServerEvent {
   thumbnail_public_url: string | null;
   created_at: string;
   leadCount: number;
+  status: "active" | "inactive";
 }
 
 // Every real card requires an event to already be set before the bot
@@ -39,6 +40,7 @@ function mapEvent(e: ServerEvent): EventRecord {
     leadCount: e.leadCount,
     isMiscellaneous: false,
     status: deriveStatus(e.event_date),
+    activeStatus: e.status,
   };
 }
 
