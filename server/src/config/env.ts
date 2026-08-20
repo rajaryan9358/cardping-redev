@@ -60,6 +60,12 @@ const envSchema = z.object({
   // production; only needs overriding in a local setup where they run on
   // separate ports with no shared reverse proxy.
   DASHBOARD_BASE_URL: z.string().optional().default(""),
+
+  // Telegram chat id to push ops alerts to (crashes, slow requests,
+  // resource pressure — see lib/opsAlert.ts) via the same bot/token as
+  // TELEGRAM_BOT_TOKEN. Unset disables alerting entirely; logging still
+  // happens either way.
+  OPS_ALERT_TELEGRAM_CHAT_ID: z.string().optional().default(""),
 });
 
 type Env = z.infer<typeof envSchema> & {
@@ -104,3 +110,5 @@ export const isGoogleDashboardLoginEnabled = Boolean(
 );
 
 export const isWhatsappOtpLoginEnabled = Boolean(env.WHATSAPP_LOGIN_OTP_TEMPLATE_NAME);
+
+export const isOpsAlertEnabled = Boolean(env.OPS_ALERT_TELEGRAM_CHAT_ID);

@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import express, { Express } from "express";
 import pinoHttp from "pino-http";
 import { logger } from "./lib/logger";
+import { slowRequestWatcher } from "./middleware/slowRequestWatcher";
 import { healthRouter } from "./routes/health.route";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.route";
 import { telegramWebhookRouter } from "./routes/telegramWebhook.route";
@@ -12,6 +13,7 @@ export function createApp(): Express {
   const app = express();
 
   app.use(pinoHttp({ logger }));
+  app.use(slowRequestWatcher);
   app.use(cookieParser());
 
   // Captures the exact request bytes onto req.rawBody before parsing, so
