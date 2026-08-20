@@ -193,13 +193,25 @@ authRouter.get("/auth/google/callback", async (req, res) => {
     const profile = await exchangeCodeForProfile(code);
     let account = await accountsRepo.findByGoogleId(profile.googleId);
     if (!account) {
-      account = await accountsRepo.create({
-        google_id: profile.googleId,
-        email: profile.email,
-        email_verified_at: new Date().toISOString(),
-        full_name: profile.fullName,
-        avatar_url: profile.avatarUrl,
-      });
+      // Someone who already signed up with this email via password/OTP,
+      // now using "Continue with Google" for the first time — link this
+      // Google identity to that existing account instead of trying to
+      // insert a second one, which would collide with idx_accounts_email.
+      const existingByEmail = await accountsRepo.findByEmail(profile.email);
+      if (existingByEmail) {
+        account = await accountsRepo.update(existingByEmail.id, {
+          google_id: profile.googleId,
+          email_verified_at: existingByEmail.email_verified_at ?? new Date().toISOString(),
+        });
+      } else {
+        account = await accountsRepo.create({
+          google_id: profile.googleId,
+          email: profile.email,
+          email_verified_at: new Date().toISOString(),
+          full_name: profile.fullName,
+          avatar_url: profile.avatarUrl,
+        });
+      }
     }
     if (account.blocked_at) {
       res.redirect("/login?error=account_blocked");
