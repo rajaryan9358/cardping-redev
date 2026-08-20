@@ -44,7 +44,11 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
         {cards.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No cards yet.</p>}
         {cards.map((card) => (
           <Tr key={card.id}>
-            <Td className="font-medium text-ink">{card.full_name || "—"}</Td>
+            <Td className="font-medium text-ink">
+              <Link href={`/cards/${card.id}`} className="hover:underline">
+                {card.full_name || "—"}
+              </Link>
+            </Td>
             <Td>{card.company_name || "—"}</Td>
             <Td className="capitalize">{card.uploaded_by || "—"}</Td>
             <Td align="right">

@@ -13,7 +13,10 @@ export interface AdminEventRow {
   status: "active" | "inactive";
   location: string | null;
   event_date: string | null;
+  thumbnail_public_url: string | null;
 }
+
+const EVENT_COLUMNS = "id, name, created_at, user_id, status, location, event_date, thumbnail_public_url, owner:users!events_user_id_fkey(full_name, email)";
 
 export interface ListEventsParams {
   // Matches an event's own name as well as its owner's name/email —
@@ -69,10 +72,7 @@ export type ListEventsFilterParams = Omit<ListEventsParams, "page" | "pageSize">
  * listEvents (which slices a page off the end) and listEventsForExport
  * (which returns everything, matching the current filters exactly). */
 async function buildFilteredEventRows({ search, sort }: ListEventsFilterParams): Promise<AdminEventRow[]> {
-  const { data, error } = await supabase
-    .from("events")
-    .select("id, name, created_at, user_id, status, location, event_date, owner:users!events_user_id_fkey(full_name, email)")
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("events").select(EVENT_COLUMNS).order("created_at", { ascending: false });
   if (error) throw error;
 
   const rawEvents = (data ?? []).map((event) => ({
@@ -166,6 +166,29 @@ async function updateEvent(
   if (error) throw error;
 }
 
+function thumbnailTimestampSlug(): string {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_");
+}
+
+/** Same bucket/path convention as server/src/integrations/storage/
+ * supabaseStorage.ts#uploadEventThumbnail — admin talks to Supabase
+ * Storage directly with its own service-role client rather than proxying
+ * through server/'s session-authenticated dashboard endpoint, consistent
+ * with every other admin repo function. */
+async function uploadThumbnail(eventId: string, buffer: Buffer, contentType: string): Promise<void> {
+  const ext = contentType === "image/png" ? "png" : "jpg";
+  const path = `${eventId}/${thumbnailTimestampSlug()}.${ext}`;
+  const { error: uploadErr } = await supabase.storage.from("event-thumbnails").upload(path, buffer, { contentType, upsert: true });
+  if (uploadErr) throw uploadErr;
+
+  const { data } = supabase.storage.from("event-thumbnails").getPublicUrl(path);
+  const { error } = await supabase
+    .from("events")
+    .update({ thumbnail_path: path, thumbnail_public_url: data.publicUrl })
+    .eq("id", eventId);
+  if (error) throw error;
+}
+
 /** `visiting_cards.event_id` is ON DELETE SET NULL, so deleting an event
  * by default just orphans its cards (they survive, event_id -> null) —
  * `alsoDeleteCards: true` is the real branch the UI checkbox controls,
@@ -195,6 +218,7 @@ export const adminEventsRepo = {
   getEventDetail,
   getEventCards,
   updateEvent,
+  uploadThumbnail,
   deleteEvent,
   bulkDeleteEvents,
 };

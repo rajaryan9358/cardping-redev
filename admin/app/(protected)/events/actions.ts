@@ -20,6 +20,17 @@ export async function updateEventAction(eventId: string, patch: EventPatch): Pro
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function uploadEventThumbnailAction(eventId: string, formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const file = formData.get("thumbnail");
+  if (!(file instanceof File)) throw new Error("No file provided.");
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await adminEventsRepo.uploadThumbnail(eventId, buffer, file.type || "image/jpeg");
+  await writeAuditLog({ adminUserId: admin.id, action: "event.update_thumbnail", targetTable: "events", targetId: eventId });
+  revalidatePath("/events");
+  revalidatePath(`/events/${eventId}`);
+}
+
 /** `alsoDeleteCards` is a real choice — visiting_cards.event_id is ON
  * DELETE SET NULL, so by default deleting an event just orphans its cards
  * (they survive). See adminEventsRepo.deleteEvent's comment. */
