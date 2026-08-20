@@ -40,9 +40,11 @@ export function Sidebar({ adminEmail }: { adminEmail: string }) {
             // whatever Next's client Router Cache last painted for this exact
             // URL, however stale — a hard navigation always requests fresh
             // HTML, so there is no cache layer left to serve something wrong.
+            // href is manually prefixed with the app's basePath (next.config.js)
+            // since, unlike next/link, a plain <a> doesn't add it for you.
             <a
               key={item.href}
-              href={item.href}
+              href={`/admin${item.href}`}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active ? "bg-accent-soft text-accent-text" : "text-muted-2 hover:bg-active-bg hover:text-ink",

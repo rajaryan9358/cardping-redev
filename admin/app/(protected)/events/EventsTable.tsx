@@ -44,7 +44,7 @@ export function EventsTable({
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale rows included — before router.refresh()
     // gets a chance to correct it a moment later.
-    window.location.href = `${pathname}?${params.toString()}`;
+    window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
   return (
@@ -87,7 +87,7 @@ export function EventsTable({
                       label: "View cards",
                       icon: <IdCard className="size-3.5" strokeWidth={2} />,
                       onClick: () =>
-                        (window.location.href = `/cards?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`),
+                        (window.location.href = `/admin/cards?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`),
                     },
                   ]}
                 />

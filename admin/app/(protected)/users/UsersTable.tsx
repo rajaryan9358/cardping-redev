@@ -116,7 +116,7 @@ export function UsersTable({
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale rows included — before router.refresh()
     // gets a chance to correct it a moment later.
-    window.location.href = `${pathname}?${params.toString()}`;
+    window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
   async function handleSendLowBalanceAlert(userId: string) {
@@ -268,7 +268,7 @@ export function UsersTable({
                       label: "View cards",
                       icon: <IdCard className="size-3.5" strokeWidth={2} />,
                       onClick: () =>
-                        (window.location.href = `/cards?userIds=${user.userIds.join(",")}&userName=${encodeURIComponent(user.full_name || "this person")}`),
+                        (window.location.href = `/admin/cards?userIds=${user.userIds.join(",")}&userName=${encodeURIComponent(user.full_name || "this person")}`),
                       disabled: user.userIds.length === 0,
                     },
                     { label: "Adjust coins", icon: <Coins className="size-3.5" strokeWidth={2} />, onClick: () => setCoinsTarget(user) },

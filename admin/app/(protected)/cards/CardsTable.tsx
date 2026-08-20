@@ -61,7 +61,7 @@ export function CardsTable({
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale confidence-filtered rows included —
     // before router.refresh() gets a chance to correct it a moment later.
-    window.location.href = `${pathname}?${params.toString()}`;
+    window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
   async function handleRerun(cardId: string) {
