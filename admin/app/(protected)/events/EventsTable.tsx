@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { IdCard } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
@@ -27,7 +27,6 @@ export function EventsTable({
   ownerSearch: string;
   sort: string;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -41,7 +40,11 @@ export function EventsTable({
       next.sort ? params.set("sort", next.sort) : params.delete("sort");
     }
     if (next.page !== undefined) params.set("page", String(next.page));
-    router.push(`${pathname}?${params.toString()}`);
+    // Hard navigation, not router.push: a soft nav to a URL visited earlier
+    // this session would instantly repaint whatever Next's client Router
+    // Cache last had for it — stale rows included — before router.refresh()
+    // gets a chance to correct it a moment later.
+    window.location.href = `${pathname}?${params.toString()}`;
   }
 
   return (
@@ -84,7 +87,7 @@ export function EventsTable({
                       label: "View cards",
                       icon: <IdCard className="size-3.5" strokeWidth={2} />,
                       onClick: () =>
-                        router.push(`/cards?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`),
+                        (window.location.href = `/cards?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`),
                     },
                   ]}
                 />

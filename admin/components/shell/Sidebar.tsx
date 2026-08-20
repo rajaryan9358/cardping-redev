@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Bell, CreditCard, IdCard, Calendar, LogOut, Megaphone, ScrollText, SlidersHorizontal, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -37,7 +36,11 @@ export function Sidebar({ adminEmail }: { adminEmail: string }) {
         {NAV_ITEMS.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
-            <Link
+            // Plain <a>, not next/link: a soft navigation here would revive
+            // whatever Next's client Router Cache last painted for this exact
+            // URL, however stale — a hard navigation always requests fresh
+            // HTML, so there is no cache layer left to serve something wrong.
+            <a
               key={item.href}
               href={item.href}
               className={cn(
@@ -47,7 +50,7 @@ export function Sidebar({ adminEmail }: { adminEmail: string }) {
             >
               <item.icon className="size-[18px]" strokeWidth={2} />
               {item.label}
-            </Link>
+            </a>
           );
         })}
       </nav>

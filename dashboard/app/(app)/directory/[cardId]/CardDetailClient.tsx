@@ -17,7 +17,6 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -75,7 +74,6 @@ export function CardDetailClient({
   interactions: InteractionEvent[];
   allTags: string[];
 }) {
-  const router = useRouter();
   const [tags, setTags] = useState(card.tags);
   const [archived, setArchived] = useState(card.archived);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -93,7 +91,10 @@ export function CardDetailClient({
 
   async function confirmDelete() {
     await clientFetch(`/api/cards/${card.id}`, { method: "DELETE" });
-    router.push("/directory");
+    // Hard navigation: a soft push to /directory here would repaint the
+    // client Router Cache's last snapshot of that list — the just-deleted
+    // card still in it — before a refresh could correct it.
+    window.location.href = "/directory";
   }
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { Pagination } from "../../../components/ui/Pagination";
 import { AuditLogRow } from "../../../lib/repositories/adminAuditLog.repo";
@@ -25,7 +25,6 @@ export function AuditLogTable({
   selectedAction: string;
   selectedAdminId: string;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -40,7 +39,11 @@ export function AuditLogTable({
       params.set("page", "1");
     }
     if (next.page !== undefined) params.set("page", String(next.page));
-    router.push(`${pathname}?${params.toString()}`);
+    // Hard navigation, not router.push: a soft nav to a URL visited earlier
+    // this session would instantly repaint whatever Next's client Router
+    // Cache last had for it — stale rows included — before router.refresh()
+    // gets a chance to correct it a moment later.
+    window.location.href = `${pathname}?${params.toString()}`;
   }
 
   return (

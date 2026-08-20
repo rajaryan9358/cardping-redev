@@ -2,7 +2,6 @@
 
 import { Link2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ImageUploadSlot } from "@/components/ui/ImageUploadSlot";
@@ -39,7 +38,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function EditLeadClient({ card }: { card: VisitingCard }) {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -71,7 +69,10 @@ export function EditLeadClient({ card }: { card: VisitingCard }) {
         }),
       });
       await parseJsonOrThrow(res);
-      router.push(`/directory/${card.id}`);
+      // Hard navigation: a soft push back to the detail page would repaint
+      // the client Router Cache's pre-edit snapshot of it before a refresh
+      // could correct it.
+      window.location.href = `/directory/${card.id}`;
     } catch {
       setError("Couldn't save changes. Please try again.");
     } finally {

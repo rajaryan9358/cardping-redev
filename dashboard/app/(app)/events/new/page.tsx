@@ -2,7 +2,6 @@
 
 import { Upload } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
@@ -16,7 +15,6 @@ function errorMessage(code: string): string {
 }
 
 export default function NewEventPage() {
-  const router = useRouter();
   const [thumbnailName, setThumbnailName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +43,10 @@ export default function NewEventPage() {
         await fetch(`/api/events/${event.id}/thumbnail`, { method: "POST", credentials: "include", body: uploadForm });
       }
 
-      router.push("/events");
+      // Hard navigation: a soft push to /events here would repaint the
+      // client Router Cache's last snapshot of that list — missing the
+      // event just created — before a refresh could correct it.
+      window.location.href = "/events";
     } catch (err) {
       setError(errorMessage((err as Error).message));
     } finally {

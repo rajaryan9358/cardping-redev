@@ -35,7 +35,11 @@ export function SubscribedUsersTable({
   function navigate(p: number) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(p));
-    router.push(`${pathname}?${params.toString()}`);
+    // Hard navigation, not router.push: a soft nav to a URL visited earlier
+    // this session would instantly repaint whatever Next's client Router
+    // Cache last had for it — stale rows included — before router.refresh()
+    // gets a chance to correct it a moment later.
+    window.location.href = `${pathname}?${params.toString()}`;
   }
 
   async function handleSendReminder(reminderUserId: string) {

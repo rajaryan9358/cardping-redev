@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Calendar, ChevronDown, CreditCard, History, Home, KeyRound, LogOut, Plug, Settings, ShieldCheck, User, Users, X } from "lucide-react";
@@ -85,7 +84,11 @@ export function Sidebar({
           const active = pathname.startsWith(item.href);
           const isSubscription = item.href === "/subscription";
           return (
-            <Link
+            // Plain <a>, not next/link: a soft navigation here would revive
+            // whatever Next's client Router Cache last painted for this exact
+            // URL, however stale — a hard navigation always requests fresh
+            // HTML, so there is no cache layer left to serve something wrong.
+            <a
               key={item.href}
               href={item.href}
               className={cn(
@@ -108,7 +111,7 @@ export function Sidebar({
                   {planTone === "active" ? "Active" : planTone === "trial" ? "Trial" : "Expired"}
                 </span>
               )}
-            </Link>
+            </a>
           );
         })}
 
@@ -131,7 +134,7 @@ export function Sidebar({
               {profileItems.map((item) => {
                 const active = pathname.startsWith(item.href);
                 return (
-                  <Link
+                  <a
                     key={item.href}
                     href={item.href}
                     className={cn(
@@ -141,7 +144,7 @@ export function Sidebar({
                   >
                     <item.icon className="size-3.5" strokeWidth={2} />
                     {item.label}
-                  </Link>
+                  </a>
                 );
               })}
               <button
