@@ -2,6 +2,7 @@ import { Router } from "express";
 import { env } from "../config/env";
 import { routeTelegramUpdate } from "../bots/telegram/router";
 import { childLogger } from "../lib/logger";
+import { watchBackgroundTask } from "../lib/watchBackgroundTask";
 
 export const telegramWebhookRouter = Router();
 const log = childLogger("tg-webhook-route");
@@ -17,7 +18,5 @@ telegramWebhookRouter.post("/webhooks/telegram", (req, res) => {
   // Telegram also expects a fast 200 — ack immediately, process after.
   res.sendStatus(200);
 
-  routeTelegramUpdate(req.body).catch((err) => {
-    log.error({ err }, "failed to process Telegram update");
-  });
+  watchBackgroundTask("tg-webhook", "Telegram webhook processing", routeTelegramUpdate(req.body));
 });

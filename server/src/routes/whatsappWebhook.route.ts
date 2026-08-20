@@ -3,6 +3,7 @@ import { env } from "../config/env";
 import { whatsappClient } from "../integrations/whatsapp/client";
 import { routeWhatsAppWebhook } from "../bots/whatsapp/router";
 import { childLogger } from "../lib/logger";
+import { watchBackgroundTask } from "../lib/watchBackgroundTask";
 
 export const whatsappWebhookRouter = Router();
 const log = childLogger("wa-webhook-route");
@@ -33,7 +34,5 @@ whatsappWebhookRouter.post("/webhooks/whatsapp", (req, res) => {
   // immediately, then process the message without blocking the response.
   res.sendStatus(200);
 
-  routeWhatsAppWebhook(req.body).catch((err) => {
-    log.error({ err }, "failed to process WhatsApp webhook");
-  });
+  watchBackgroundTask("wa-webhook", "WhatsApp webhook processing", routeWhatsAppWebhook(req.body));
 });
