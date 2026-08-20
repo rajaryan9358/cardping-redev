@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import { env } from "../config/env";
+import { resilientSupabaseFetch } from "./resilientFetch";
 
 // Service-role client — this process is a trusted backend, so it bypasses
 // row-level security by design. Never forward this key to a client app.
@@ -11,4 +12,5 @@ export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE
   auth: { persistSession: false },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- realtime-js's WebSocketLikeConstructor type doesn't line up with ws's, but the shapes are compatible at runtime
   realtime: { transport: WebSocket as any },
+  global: { fetch: resilientSupabaseFetch },
 });
