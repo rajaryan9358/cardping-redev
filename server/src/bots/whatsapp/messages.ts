@@ -133,8 +133,8 @@ export const Copy = {
   processingCard: "📇 Got it — processing your card now…",
   tooManyImages:
     "🤔 Not sure how to handle more than 2 images at once — please send one photo, or two (front and back) of the same card.",
-  voiceNoteHint:
-    "Want to add a voice note about this contact? Reply to this photo, this message, or the contact card with a voice note.",
+  voiceNotePrompt: "Want to add a voice note about this contact?",
+  voiceNoteRecordPrompt: "🎙️ Go ahead — record and send your voice note now, I'll attach it to this contact.",
   voiceNoteSaved: "Transcript successfully created ✅",
   voiceNoteMustReplyToCard: "🚫 A voice note must be sent as a reply to a scanned card, its summary, or its contact card message.",
   accountSettingsPrompt: "What would you like to do?",

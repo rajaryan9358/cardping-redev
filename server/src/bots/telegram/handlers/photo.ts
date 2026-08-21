@@ -11,6 +11,7 @@ import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { formatEventLifetimeRemaining } from "../../../services/eventService";
 import { childLogger } from "../../../lib/logger";
 import { Copy, formatCardSummary, sendEventPicker } from "../messages";
+import { Ids } from "../ids";
 
 const log = childLogger("tg-photo-handler");
 
@@ -127,8 +128,12 @@ export async function sendScanResult(
   });
   await registerCardMessageRef(card.id, String(summaryMessageId));
 
-  const hintMessageId = await telegramClient.sendMessage(chatId, eventLine + Copy.voiceNoteHint);
-  await registerCardMessageRef(card.id, String(hintMessageId));
+  await telegramClient.sendMessage(chatId, eventLine + Copy.voiceNotePrompt, {
+    buttons: [
+      { text: "🎙️ Add voice note", data: Ids.voiceNoteAdd },
+      { text: "📇 Scan next card", data: Ids.voiceNoteScanNext },
+    ],
+  });
 }
 
 /** Called once an event has just been set (typed name or picked from the

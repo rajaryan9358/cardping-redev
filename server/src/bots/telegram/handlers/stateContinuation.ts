@@ -1,8 +1,10 @@
 import { telegramClient } from "../../../integrations/telegram/client";
 import { usersRepo } from "../../../db/repositories/users.repo";
 import { accountsRepo } from "../../../db/repositories/accounts.repo";
+import { visitingCardsRepo } from "../../../db/repositories/visitingCards.repo";
 import { setActiveEvent, setActiveEventById, isEventExpired } from "../../../services/eventService";
 import { finalizeScan } from "../../../services/scanFlowService";
+import { attachVoiceNoteToCard } from "../../../services/voiceNoteService";
 import { getSubscriptionStatus } from "../../../services/subscriptionStatus";
 import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { registerCardMessageRef } from "../../../services/cardService";
@@ -128,6 +130,19 @@ export async function tryContinuePendingState(
         return true;
       }
       return false;
+    }
+
+    case "awaiting_voice_note": {
+      if (msg.type !== "voice" || !msg.voiceFileId || !user.active_visiting_card_id) return false;
+
+      const card = await visitingCardsRepo.findById(user.active_visiting_card_id);
+      if (!card) return false;
+
+      await usersRepo.setState(user.user_id, "idle");
+      const buffer = await telegramClient.downloadFileById(msg.voiceFileId);
+      await attachVoiceNoteToCard(user.user_id, card, buffer);
+      await telegramClient.sendMessage(chatId, Copy.voiceNoteSaved);
+      return true;
     }
 
     case "awaiting_event_lifetime_choice": {

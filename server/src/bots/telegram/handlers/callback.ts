@@ -13,7 +13,13 @@ export async function handleCallback(msg: NormalizedTelegramMessage, user: UserW
 
   switch (msg.callbackData) {
     case Ids.menuScan:
+    case Ids.voiceNoteScanNext:
       await telegramClient.sendMessage(chatId, Copy.askForPhoto);
+      return;
+
+    case Ids.voiceNoteAdd:
+      await usersRepo.setState(user.user_id, "awaiting_voice_note");
+      await telegramClient.sendMessage(chatId, Copy.voiceNoteRecordPrompt);
       return;
 
     case Ids.menuSetEvent: {

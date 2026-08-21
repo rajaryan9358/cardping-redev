@@ -8,6 +8,9 @@ export const Ids = {
   menuAccount: "menu_account",
   menuViewDashboard: "menu_view_dashboard",
 
+  voiceNoteAdd: "voice_note_add",
+  voiceNoteScanNext: "voice_note_scan_next",
+
   eventChangeYes: "event_change_yes",
   eventChangeNo: "event_change_no",
   // Dynamic per-event rows use the prefix "event_pick:<eventId>" (see the

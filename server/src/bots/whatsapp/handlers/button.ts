@@ -13,7 +13,13 @@ export async function handleButton(msg: NormalizedWhatsAppMessage, user: UserWit
 
   switch (msg.buttonId) {
     case Ids.menuScan:
+    case Ids.voiceNoteScanNext:
       await whatsappClient.sendText(phoneNumberId, from, Copy.askForPhoto);
+      return;
+
+    case Ids.voiceNoteAdd:
+      await usersRepo.setState(user.user_id, "awaiting_voice_note");
+      await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteRecordPrompt);
       return;
 
     case Ids.menuSetEvent: {

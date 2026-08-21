@@ -21,7 +21,13 @@ export type UserState =
   | "awaiting_back_photo"
   // Waiting on a tap from the event-lifetime picker (1h/6h/.../Always),
   // shown from the account-settings menu.
-  | "awaiting_event_lifetime_choice";
+  | "awaiting_event_lifetime_choice"
+  // "Add voice note" was tapped on the post-scan prompt — the next voice
+  // note this channel identity sends attaches to active_visiting_card_id
+  // directly, no reply-to-message needed (unlike the older reply-matching
+  // path in handlers/audio.ts|voice.ts, which still works independently
+  // for anyone who replies without ever tapping the button).
+  | "awaiting_voice_note";
 
 export interface User {
   id: string;

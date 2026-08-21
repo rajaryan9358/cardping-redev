@@ -11,6 +11,7 @@ import { createMagicLoginLink } from "../../../services/magicLoginService";
 import { formatEventLifetimeRemaining } from "../../../services/eventService";
 import { childLogger } from "../../../lib/logger";
 import { Copy, formatCardSummary, sendEventPicker } from "../messages";
+import { Ids } from "../ids";
 
 const log = childLogger("wa-image-handler");
 
@@ -154,8 +155,10 @@ export async function sendScanResult(
   });
   if (contactMessageId) await registerCardMessageRef(card.id, contactMessageId);
 
-  const hintMessageId = await whatsappClient.sendText(phoneNumberId, from, eventLine + Copy.voiceNoteHint);
-  if (hintMessageId) await registerCardMessageRef(card.id, hintMessageId);
+  await whatsappClient.sendButtons(phoneNumberId, from, eventLine + Copy.voiceNotePrompt, [
+    { id: Ids.voiceNoteAdd, title: "Add voice note" },
+    { id: Ids.voiceNoteScanNext, title: "Scan next card" },
+  ]);
 }
 
 /** Called once an event has just been set (typed name or picked from the
