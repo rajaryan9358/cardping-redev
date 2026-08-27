@@ -21,15 +21,18 @@ homeRouter.get("/home/summary", requireSession, requireActivePlanOrTrial, async 
     const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 86_400_000);
 
-    const [recentCards, events, totalContacts, scansThisWeek, scansPriorWeek] = await Promise.all([
+    const [recentCards, events, totalContacts, scansThisWeek, scansPriorWeek, eventsThisWeek, eventsPriorWeek] = await Promise.all([
       visitingCardsRepo.getRecentForAccount(usersIds, RECENT_CARDS_LIMIT),
       eventsRepo.listForAccount(usersIds),
       visitingCardsRepo.listForAccount(usersIds, {}, 1, 1).then((r) => r.total),
       visitingCardsRepo.countScansSince(usersIds, weekAgo.toISOString()),
       visitingCardsRepo.countScansSince(usersIds, twoWeeksAgo.toISOString(), weekAgo.toISOString()),
+      eventsRepo.countEventsSince(usersIds, weekAgo.toISOString()),
+      eventsRepo.countEventsSince(usersIds, twoWeeksAgo.toISOString(), weekAgo.toISOString()),
     ]);
 
-    const scansTrendPct = scansPriorWeek > 0 ? Math.round(((scansThisWeek - scansPriorWeek) / scansPriorWeek) * 100) : null;
+    const trendPct = (thisPeriod: number, priorPeriod: number): number | null =>
+      priorPeriod > 0 ? Math.round(((thisPeriod - priorPeriod) / priorPeriod) * 100) : null;
 
     res.json({
       recentCards,
@@ -37,7 +40,13 @@ homeRouter.get("/home/summary", requireSession, requireActivePlanOrTrial, async 
       totalContacts,
       totalEvents: events.length,
       scansThisWeek,
-      scansTrendPct,
+      scansTrendPct: trendPct(scansThisWeek, scansPriorWeek),
+      // "Contacts added" and "scans" are the same underlying row (one
+      // card = one contact), so this pace figure intentionally matches
+      // scansTrendPct — kept as its own field so the Total Contacts stat
+      // card can show a trend independent of Scans This Week's copy.
+      contactsTrendPct: trendPct(scansThisWeek, scansPriorWeek),
+      eventsTrendPct: trendPct(eventsThisWeek, eventsPriorWeek),
     });
   } catch (err) {
     log.error({ err }, "home summary failed");

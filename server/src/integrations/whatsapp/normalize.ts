@@ -1,5 +1,17 @@
 import { NormalizedWhatsAppMessage } from "./types";
 
+/** Meta's webhook `from` field is always bare digits with country code, no
+ * `+` (e.g. "919876543210") — that's the canonical wa_id format every
+ * `users.wa_id`/`channel_links.channel_identifier` row is stored in.
+ * Anything accepting a phone number from elsewhere (the dashboard's
+ * "Connect WhatsApp" form, which collects a `+91`-prefixed string) must
+ * normalize through this before comparing/storing it, or it silently
+ * fails to match the webhook-created row and forks a duplicate identity —
+ * see channels.route.ts. */
+export function normalizeWaId(raw: string): string {
+  return raw.replace(/\D/g, "");
+}
+
 /** Reduces a raw `POST /webhooks/whatsapp` body down to the single message
  * it contains, or null for delivery/read status callbacks and anything
  * else we don't act on. Ported from the original "Normalize WA Payload"

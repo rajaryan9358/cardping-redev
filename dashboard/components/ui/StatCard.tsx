@@ -1,4 +1,19 @@
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, TrendingDown, TrendingUp } from "lucide-react";
+
+/** Shared "vs last week" trend chip — pass a *TrendPct from home.route.ts
+ * (null when there's no prior-period data to compare against, e.g. a
+ * brand-new account). */
+export function TrendIndicator({ pct }: { pct: number | null }) {
+  if (pct === null) return null;
+  const Icon = pct >= 0 ? TrendingUp : TrendingDown;
+  return (
+    <span className={`flex items-center gap-1 text-sm ${pct >= 0 ? "text-success-text" : "text-danger-text"}`}>
+      <Icon className="size-3.5" strokeWidth={2.25} />
+      {pct >= 0 ? "+" : ""}
+      {pct}%
+    </span>
+  );
+}
 
 interface StatCardProps {
   label: string;

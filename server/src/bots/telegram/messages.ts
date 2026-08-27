@@ -4,6 +4,7 @@ import { ExtractedCard } from "../../types/domain";
 import { SubscriptionStatus } from "../../services/subscriptionStatus";
 import { formatEventLifetimeRemaining } from "../../services/eventService";
 import { resolveUsersIdsFromChannelIdentity } from "../../services/accountScope";
+import { env } from "../../config/env";
 import { Ids } from "./ids";
 
 export async function sendMainMenu(chatId: string, greeting: string, activeEventName: string | null = null): Promise<void> {
@@ -78,14 +79,17 @@ function subscriptionLabel(status: SubscriptionStatus): string {
 }
 
 export function formatCardSummary(card: ExtractedCard): string {
-  return [
+  const emails = [...card.business_emails, ...card.personal_emails];
+  const lines = [
     `Name: <b>${card.person_name || "—"}</b>`,
     `Business: <b>${card.company_name || "—"}</b>`,
     `Designation: <b>${card.job_title || "—"}</b>`,
-    `Email: ${card.primary_email || "—"}`,
-    `Website: ${card.website || "—"}`,
-    `Contact: ${card.primary_phone || "—"}`,
-  ].join("\n");
+    `Email: ${emails.length > 0 ? emails.join(", ") : "—"}`,
+    `Website: ${card.websites.length > 0 ? card.websites.join(", ") : "—"}`,
+    `Contact: ${card.phones.length > 0 ? card.phones.join(", ") : "—"}`,
+  ];
+  if (card.qr_code_content) lines.push(`QR code: ${card.qr_code_content}`);
+  return lines.join("\n");
 }
 
 export const Copy = {
@@ -143,5 +147,7 @@ export const Copy = {
   channelLinkCodeInvalid: "That connection link has expired or was already used — generate a new one from the dashboard.",
   channelLinkAlreadyLinked: "This Telegram account is already connected to a CardPing account.",
   channelOnboardingPrompt: (url: string) =>
-    `👋 Welcome to CardPing! To start scanning cards, finish setting up your account here (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,
+    `👋 Welcome to CardPing! Connect this account to claim ${env.COINS_STARTER_BALANCE} free credits and start scanning cards (takes under a minute):\n${url}\n\nThis link expires in 30 minutes.`,
+  welcomeBackPrompt: (url: string) =>
+    `👋 Welcome back! This account was connected before — log back in to reconnect it and pick up right where you left off:\n${url}\n\nThis link expires in 30 minutes.`,
 };

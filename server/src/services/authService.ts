@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { Response } from "express";
 import { env } from "../config/env";
 import { sessionsRepo, SessionSource } from "../db/repositories/sessions.repo";
+import { resolveIpLocation } from "../lib/ipGeolocation";
 import { Account } from "../types/domain";
 
 const BCRYPT_ROUNDS = 12; // matches admin/lib/auth.ts's convention
@@ -35,14 +36,17 @@ export async function createSessionAndSetCookie(
   accountId: string,
   userAgent: string | undefined,
   source: SessionSource = "login",
+  ip?: string,
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + env.SESSION_TTL_HOURS * 60 * 60 * 1000);
+  const location = await resolveIpLocation(ip);
   const sessionId = await sessionsRepo.create({
     accountId,
     deviceLabel: deviceLabelFromUserAgent(userAgent),
     userAgent: userAgent ?? null,
     expiresAt: expiresAt.toISOString(),
     source,
+    location,
   });
 
   res.cookie(env.SESSION_COOKIE_NAME, sessionId, {

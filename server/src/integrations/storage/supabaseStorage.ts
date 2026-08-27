@@ -16,11 +16,29 @@ async function uploadCardImage(userId: string, imageId: string, buffer: Buffer):
   return { path, publicUrl: data.publicUrl };
 }
 
-async function uploadVoiceNote(userId: string, cardId: string, buffer: Buffer): Promise<{ path: string; publicUrl: string }> {
-  const path = `${userId}/${cardId}_${timestampSlug()}.ogg`;
+// WhatsApp/Telegram voice notes are always ogg/opus, hence the default —
+// a browser recording (dashboard's "Add new voice note") is typically
+// webm/opus instead, so its actual mimeType must be passed through rather
+// than assumed, or playback/transcription would be tagged with the wrong
+// container.
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("mp4") || mimeType.includes("m4a")) return "m4a";
+  if (mimeType.includes("wav")) return "wav";
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+  return "ogg";
+}
+
+async function uploadVoiceNote(
+  userId: string,
+  cardId: string,
+  buffer: Buffer,
+  mimeType = "audio/ogg",
+): Promise<{ path: string; publicUrl: string }> {
+  const path = `${userId}/${cardId}_${timestampSlug()}.${extensionForMimeType(mimeType)}`;
   const { error } = await supabase.storage
     .from(env.SUPABASE_STORAGE_BUCKET_VOICE)
-    .upload(path, buffer, { contentType: "audio/ogg", upsert: true });
+    .upload(path, buffer, { contentType: mimeType, upsert: true });
   if (error) throw error;
 
   const { data } = await supabase.storage.from(env.SUPABASE_STORAGE_BUCKET_VOICE).getPublicUrl(path);

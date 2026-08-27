@@ -76,7 +76,7 @@ export function ChangePlanModal({
               <div>
                 <p className="text-sm font-medium text-ink">{plan.name}</p>
                 <p className="text-xs text-muted">
-                  ₹{plan.price_inr} · {plan.period_days} days · {plan.coins_included} coins
+                  ₹{plan.price_inr} · {plan.period_days} days · {plan.coins_included} credits
                 </p>
               </div>
             </div>

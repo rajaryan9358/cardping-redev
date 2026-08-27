@@ -36,7 +36,7 @@ export async function tryContinuePendingState(
       const name = msg.text?.trim();
       if (!name) return false;
       await usersRepo.setState(user.user_id, "idle");
-      const event = await setActiveEvent(user.user_id, name);
+      const event = await setActiveEvent(user.user_id, name, user.account_id);
       if (user.pending_front_media_id) {
         await resumeScanAfterEventSet(chatId, user.user_id);
       } else {
@@ -53,7 +53,7 @@ export async function tryContinuePendingState(
       }
       if (msg.callbackData?.startsWith(Ids.eventPickPrefix)) {
         const eventId = msg.callbackData.slice(Ids.eventPickPrefix.length);
-        const eventName = await setActiveEventById(user.user_id, eventId);
+        const eventName = await setActiveEventById(user.user_id, eventId, user.account_id);
         await usersRepo.setState(user.user_id, "idle");
         if (user.pending_front_media_id) {
           await resumeScanAfterEventSet(chatId, user.user_id);
@@ -141,7 +141,8 @@ export async function tryContinuePendingState(
       await usersRepo.setState(user.user_id, "idle");
       const buffer = await telegramClient.downloadFileById(msg.voiceFileId);
       await attachVoiceNoteToCard(user.user_id, card, buffer);
-      await telegramClient.sendMessage(chatId, Copy.voiceNoteSaved);
+      const confirmMessageId = await telegramClient.sendMessage(chatId, Copy.voiceNoteSaved);
+      await registerCardMessageRef(card.id, String(confirmMessageId));
       return true;
     }
 

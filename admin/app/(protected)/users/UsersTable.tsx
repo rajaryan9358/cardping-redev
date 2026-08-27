@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2, IdCard, Pencil, Trash2, X, Download } from "lucide-react";
@@ -17,6 +17,7 @@ import { AdminUserListRow } from "../../../lib/repositories/adminUsers.repo";
 import { Plan } from "../../../lib/repositories/adminSubscriptions.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
+import { saveListNavState, restoreListScroll } from "../../../lib/listNavState";
 import {
   setUserBlockedAction,
   setAccountBlockedAction,
@@ -40,6 +41,7 @@ const STATUS_TABS = [
   { value: "trial", label: "Trial" },
   { value: "subscription", label: "Subscription" },
   { value: "expired", label: "Expired" },
+  { value: "needs_info", label: "Needs Info" },
 ] as const;
 
 const EXPIRY_QUICK_FILTERS = [
@@ -93,6 +95,11 @@ export function UsersTable({
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    restoreListScroll(pathname, searchParams.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -126,6 +133,7 @@ export function UsersTable({
 
   function navigate(next: {
     page?: number;
+    pageSize?: number;
     search?: string;
     status?: string;
     expiresBefore?: string | null;
@@ -152,7 +160,12 @@ export function UsersTable({
     if (next.sort !== undefined) {
       next.sort ? params.set("sort", next.sort) : params.delete("sort");
     }
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
+      params.set("page", "1");
+    }
     if (next.page !== undefined) params.set("page", String(next.page));
+    saveListNavState(pathname, params.toString());
     // Hard navigation, not router.push: a soft nav to a URL visited earlier
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale rows included — before router.refresh()
@@ -298,7 +311,7 @@ export function UsersTable({
           </Th>
           <Th>User</Th>
           <Th>Channels</Th>
-          <SortableTh field="coin_balance" label="Coins" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
+          <SortableTh field="coin_balance" label="Credits" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
           <Th>Plan</Th>
           <Th>Status</Th>
           <SortableTh field="plan_expires_at" label="Expires" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
@@ -316,7 +329,11 @@ export function UsersTable({
               />
             </Td>
             <Td>
-              <Link href={`/users/${user.id}`} className="font-medium text-ink hover:underline">
+              <Link
+                href={`/users/${user.id}`}
+                onClick={() => saveListNavState(pathname, searchParams.toString())}
+                className="font-medium text-ink hover:underline"
+              >
                 {user.full_name || "Unnamed"}
               </Link>
               <div className="text-xs text-muted">{user.email || "No email on file"}</div>
@@ -350,7 +367,7 @@ export function UsersTable({
                         (window.location.href = `/admin/cards?userIds=${user.userIds.join(",")}&userName=${encodeURIComponent(user.full_name || "this person")}`),
                       disabled: user.userIds.length === 0,
                     },
-                    { label: "Adjust coins", icon: <Coins className="size-3.5" strokeWidth={2} />, onClick: () => setCoinsTarget(user) },
+                    { label: "Adjust credits", icon: <Coins className="size-3.5" strokeWidth={2} />, onClick: () => setCoinsTarget(user) },
                     {
                       label: user.effective_plan_id ? "Change plan" : "Assign plan",
                       icon: <CreditCard className="size-3.5" strokeWidth={2} />,
@@ -397,6 +414,7 @@ export function UsersTable({
           totalItems={total}
           pageSize={pageSize}
           onPageChange={(p) => navigate({ page: p })}
+          onPageSizeChange={(size) => navigate({ pageSize: size })}
         />
       </TableCard>
 

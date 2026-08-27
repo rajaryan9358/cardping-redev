@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { adminEventsRepo } from "../../../../lib/repositories/adminEvents.repo";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../../components/ui/Table";
+import { BackLink } from "../../../../components/ui/BackLink";
 import { formatDate, formatDateTime } from "../../../../lib/format";
+import { ChannelIcon } from "@/components/ChannelIcon";
 
 export default async function EventDetailPage({ params }: { params: { eventId: string } }) {
   const event = await adminEventsRepo.getEventDetail(params.eventId);
@@ -13,10 +14,7 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/events" className="flex w-fit items-center gap-1.5 text-sm text-muted hover:text-ink">
-        <ArrowLeft className="size-4" strokeWidth={2} />
-        Back to events
-      </Link>
+      <BackLink basePath="/events" label="Back to events" />
 
       <div>
         <h1 className="text-2xl font-semibold text-ink">{event.name}</h1>
@@ -50,7 +48,9 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
               </Link>
             </Td>
             <Td>{card.company_name || "—"}</Td>
-            <Td className="capitalize">{card.uploaded_by || "—"}</Td>
+            <Td>
+              <ChannelIcon channel={card.uploaded_by} />
+            </Td>
             <Td align="right">
               {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
             </Td>

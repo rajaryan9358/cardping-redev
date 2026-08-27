@@ -15,7 +15,7 @@ export default function SubscriptionSuccessPage() {
       <SuccessCheck />
       <h1 className="text-2xl font-semibold text-ink">Payment received</h1>
       <p className="text-sm text-muted">
-        We&apos;re confirming it now — your plan and coin balance will update within a minute or two.
+        We&apos;re confirming it now — your plan and credit balance will update within a minute or two.
       </p>
 
       <div className="flex w-full gap-3 pt-2">

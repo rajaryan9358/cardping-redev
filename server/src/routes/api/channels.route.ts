@@ -6,6 +6,7 @@ import { requireSession } from "../../middleware/requireSession";
 import * as channelLinkService from "../../services/channelLinkService";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
 import { OtpNotConfiguredError, requestOtp, verifyOtp } from "../../services/otpService";
+import { normalizeWaId } from "../../integrations/whatsapp/normalize";
 import { ChannelLinkChannel } from "../../types/domain";
 import { childLogger } from "../../lib/logger";
 import { parseBody } from "./validate";
@@ -19,7 +20,7 @@ channelsRouter.get("/channels", requireSession, async (req, res) => {
 });
 
 channelsRouter.delete("/channels/:id", requireSession, async (req, res) => {
-  await channelLinksRepo.deleteById(req.params.id, req.account!.id);
+  await channelLinksRepo.unlinkById(req.params.id, req.account!.id);
   res.json({ ok: true });
 });
 
@@ -45,15 +46,16 @@ const otpRequestSchema = z.object({ mobile: z.string().min(6) });
 channelsRouter.post("/channels/whatsapp/otp/request", requireSession, async (req, res) => {
   const body = parseBody(otpRequestSchema, req, res);
   if (!body) return;
+  const mobile = normalizeWaId(body.mobile);
 
   try {
-    const existing = await channelLinksRepo.findByChannelIdentifier("whatsapp", body.mobile);
+    const existing = await channelLinksRepo.findByChannelIdentifier("whatsapp", mobile);
     if (existing && existing.account_id !== req.account!.id) {
       res.status(409).json({ error: "already_linked_elsewhere" });
       return;
     }
 
-    await requestOtp(body.mobile, "channel_link");
+    await requestOtp(mobile, "channel_link");
     res.json({ ok: true });
   } catch (err) {
     if (err instanceof OtpNotConfiguredError) {
@@ -71,26 +73,29 @@ channelsRouter.post("/channels/whatsapp/otp/verify", requireSession, async (req,
   const body = parseBody(otpVerifySchema, req, res);
   if (!body) return;
   const account = req.account!;
+  const mobile = normalizeWaId(body.mobile);
 
   try {
-    const existing = await channelLinksRepo.findByChannelIdentifier("whatsapp", body.mobile);
-    if (existing) {
-      if (existing.account_id !== account.id) {
-        res.status(409).json({ error: "already_linked_elsewhere" });
-        return;
-      }
-      res.json({ ok: true }); // already linked to this same account — no-op
+    const existing = await channelLinksRepo.findByChannelIdentifier("whatsapp", mobile);
+    if (existing && existing.account_id !== account.id) {
+      res.status(409).json({ error: "already_linked_elsewhere" });
       return;
     }
+    if (existing && existing.unlinked_at === null) {
+      res.json({ ok: true }); // already actively linked to this same account — no-op
+      return;
+    }
+    // Either never linked before, or linked to this same account and
+    // currently disconnected — either way, fall through and (re)link it.
 
-    const result = await verifyOtp(body.mobile, "channel_link", body.code);
+    const result = await verifyOtp(mobile, "channel_link", body.code);
     if (result !== "valid") {
       res.status(400).json({ error: result });
       return;
     }
 
-    const user = await usersRepo.findOrCreate("whatsapp", body.mobile, body.mobile);
-    await channelLinkService.linkChannel(account.id, user.user_id, "whatsapp", body.mobile, user.coin_balance);
+    const user = await usersRepo.findOrCreate("whatsapp", mobile, mobile);
+    await channelLinkService.linkChannel(account.id, user.user_id, "whatsapp", mobile, user.coin_balance);
     res.json({ ok: true });
   } catch (err: any) {
     if (err?.code === "23505") {

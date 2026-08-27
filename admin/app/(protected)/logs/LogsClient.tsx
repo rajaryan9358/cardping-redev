@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { TextField } from "../../../components/ui/TextField";
 import { Badge } from "../../../components/ui/Badge";
+import { Pagination } from "../../../components/ui/Pagination";
 import { cn } from "@/lib/cn";
 import { LogEntry, LogProcessName } from "../../../lib/serverLogs";
 import { formatDateTime } from "../../../lib/format";
+
+const DEFAULT_PAGE_SIZE = 50;
 
 const PROCESS_TABS: { value: LogProcessName; label: string }[] = [
   { value: "server", label: "Server" },
@@ -14,7 +17,12 @@ const PROCESS_TABS: { value: LogProcessName; label: string }[] = [
   { value: "admin", label: "Admin" },
 ];
 
-const LEVEL_TABS: { value: LogEntry["levelLabel"] | ""; label: string }[] = [
+type LevelFilter = LogEntry["levelLabel"] | "" | "problems";
+
+const PROBLEM_LEVELS: LogEntry["levelLabel"][] = ["fatal", "error", "warn"];
+
+const LEVEL_TABS: { value: LevelFilter; label: string }[] = [
+  { value: "problems", label: "Warn/Error" },
   { value: "", label: "All" },
   { value: "fatal", label: "Fatal" },
   { value: "error", label: "Error" },
@@ -80,17 +88,30 @@ export function LogsClient({
   process: LogProcessName;
   error: string | null;
 }) {
-  const [level, setLevel] = useState<LogEntry["levelLabel"] | "">("");
+  // Defaults to "problems" (warn/error/fatal) rather than "All" — raw pino
+  // output is mostly "request completed" INFO noise, which used to bury
+  // the handful of lines actually worth looking at.
+  const [level, setLevel] = useState<LevelFilter>("problems");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return logs.filter((e) => {
-      if (level && e.levelLabel !== level) return false;
+      if (level === "problems" && !PROBLEM_LEVELS.includes(e.levelLabel)) return false;
+      if (level !== "problems" && level && e.levelLabel !== level) return false;
       if (term && !e.msg.toLowerCase().includes(term) && !(e.scope ?? "").toLowerCase().includes(term)) return false;
       return true;
     });
   }, [logs, level, search]);
+
+  // A new filter/search should always land back on page 1 — otherwise a
+  // narrower result set can leave `page` pointing past the end of it.
+  useEffect(() => setPage(1), [level, search]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="flex flex-col gap-4">
@@ -155,8 +176,20 @@ export function LogsClient({
         {filtered.length === 0 ? (
           <p className="px-6 py-10 text-center text-sm text-muted">No log lines match.</p>
         ) : (
-          filtered.map((entry, i) => <LogRow key={i} entry={entry} />)
+          paged.map((entry, i) => <LogRow key={i} entry={entry} />)
         )}
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          totalItems={filtered.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          pageSizeOptions={[25, 50, 100, 250]}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
       </div>
     </div>
   );

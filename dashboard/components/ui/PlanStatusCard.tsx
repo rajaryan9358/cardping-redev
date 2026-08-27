@@ -18,7 +18,7 @@ export function PlanStatusCard({ status, coinBalance }: { status: PlanStatus; co
           <div>
             <p className="text-sm font-semibold text-warning-text">You&apos;re on a free trial</p>
             <p className="text-xs text-warning-text/80">
-              {coinBalance.toLocaleString()} trial coins remaining. Subscribe to a plan before they run out.
+              {coinBalance.toLocaleString()} trial credits remaining. Subscribe to a plan before they run out.
             </p>
           </div>
         </div>

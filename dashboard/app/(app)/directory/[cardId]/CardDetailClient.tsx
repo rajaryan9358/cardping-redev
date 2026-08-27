@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   Contact,
   ExternalLink,
+  FileText,
   History,
   Image as ImageIcon,
   LucideIcon,
@@ -12,6 +13,8 @@ import {
   Mic,
   Pencil,
   Phone,
+  Plus,
+  QrCode,
   Share2,
   Tag as TagIcon,
   Trash2,
@@ -19,14 +22,23 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { channelLabel } from "@/components/ui/ChannelIcon";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TagAutocomplete } from "@/components/ui/TagAutocomplete";
+import { VoiceNoteRecorderDialog } from "@/components/ui/VoiceNoteRecorderDialog";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { cn } from "@/lib/cn";
-import { InteractionEvent, VisitingCard } from "@/lib/types";
+import { InteractionEvent, VisitingCard, VoiceNote } from "@/lib/types";
 import { clientFetch } from "@/lib/clientFetch";
 
 function toHref(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+/** A QR code can encode plain text or a vCard, not just a URL — only offer
+ * a clickable "Open" for something that actually looks like one. */
+function looksLikeUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value) || /^[\w-]+\.[a-z]{2,}(\/|$)/i.test(value.trim());
 }
 
 function SocialLink({ label, url }: { label: string; url: string }) {
@@ -55,7 +67,7 @@ function Section({ title, icon: Icon, children }: { title: string; icon: LucideI
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
     <div className="flex flex-col gap-0.5">
@@ -65,22 +77,78 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+type MultiValueKind = "text" | "tel" | "email" | "url";
+
+/** A field can hold more than one value now (a card can have more than one
+ * phone/email/website/address) — stored as one newline-joined column, but
+ * shown here as its own stacked, individually-actionable box per value
+ * (in the order extraction found them — see visionPrompt.ts's "most
+ * prominent first" instruction) rather than run-on lines of plain text. */
+function MultiValueField({ label, value, kind = "text" }: { label: string; value: string | null; kind?: MultiValueKind }) {
+  const lines = value?.split("\n").filter((l) => l.trim().length > 0) ?? [];
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 sm:col-span-2">
+      <span className="text-xs text-muted">{label}</span>
+      <div className="flex flex-col gap-1.5">
+        {lines.map((line, i) => {
+          const href = kind === "tel" ? `tel:${line}` : kind === "email" ? `mailto:${line}` : kind === "url" ? toHref(line) : null;
+          const external = kind === "url";
+          const content = <span className="truncate text-sm text-ink">{line}</span>;
+          const boxClass =
+            "flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-warm px-3.5 py-2.5" +
+            (href ? " transition-colors hover:border-accent hover:bg-accent-soft/40" : "");
+
+          if (!href) {
+            return (
+              <div key={i} className={boxClass}>
+                {content}
+              </div>
+            );
+          }
+          return (
+            <a key={i} href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} className={boxClass}>
+              {content}
+              {external && <ExternalLink className="size-3.5 shrink-0 text-muted" strokeWidth={2} />}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** First line of a possibly multi-value field — for the quick-action
+ * buttons (Call/WhatsApp/Email), which can only target one number/address
+ * at a time. */
+function firstLine(value: string | null): string | null {
+  return value?.split("\n")[0] ?? null;
+}
+
 export function CardDetailClient({
   card,
   interactions,
+  voiceNotes: initialVoiceNotes,
   allTags,
 }: {
   card: VisitingCard;
   interactions: InteractionEvent[];
+  voiceNotes: VoiceNote[];
   allTags: string[];
 }) {
   const [tags, setTags] = useState(card.tags);
   const [archived, setArchived] = useState(card.archived);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [voiceNotes, setVoiceNotes] = useState(initialVoiceNotes);
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const [enlargedImage, setEnlargedImage] = useState<{ src: string; alt: string } | null>(null);
 
-  async function toggleArchived() {
+  async function confirmToggleArchived() {
     const next = !archived;
     setArchived(next);
+    setArchiveOpen(false);
     await clientFetch(`/api/cards/${card.id}`, { method: "PATCH", body: JSON.stringify({ archived: next }) });
   }
 
@@ -119,11 +187,11 @@ export function CardDetailClient({
               minute: "2-digit",
             })}
             {" · "}Source: {card.eventName}
-            {" · "}Uploaded via {card.uploadedBy === "whatsapp" ? "WhatsApp" : "Telegram"}
+            {" · "}Uploaded via {channelLabel(card.uploadedBy)}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" className="gap-1.5" onClick={toggleArchived}>
+          <Button variant="secondary" className="gap-1.5" onClick={() => setArchiveOpen(true)}>
             {archived ? <ArchiveRestore className="size-4" strokeWidth={2} /> : <Archive className="size-4" strokeWidth={2} />}
             {archived ? "Unarchive" : "Archive"}
           </Button>
@@ -140,44 +208,74 @@ export function CardDetailClient({
         </div>
       </div>
 
-      {(card.phone1 || card.businessEmail) && (
-        <div className="flex gap-3">
-          {card.phone1 && (
-            <a href={`tel:${card.phone1}`}>
-              <Button variant="secondary" className="gap-2">
-                <Phone className="size-4" strokeWidth={2} /> Call
-              </Button>
-            </a>
-          )}
-          {card.phone1 && (
-            <a href={`https://wa.me/${card.phone1.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
-              <Button variant="secondary" className="gap-2">
-                <Share2 className="size-4" strokeWidth={2} /> WhatsApp
-              </Button>
-            </a>
-          )}
-          {card.businessEmail && (
-            <a href={`mailto:${card.businessEmail}`}>
-              <Button variant="secondary" className="gap-2">
-                <Mail className="size-4" strokeWidth={2} /> Email
-              </Button>
-            </a>
-          )}
-        </div>
-      )}
+      {(() => {
+        const phone = firstLine(card.phone1);
+        const email = firstLine(card.businessEmail) ?? firstLine(card.personalEmail);
+        if (!phone && !email) return null;
+        return (
+          <div className="flex gap-3">
+            {phone && (
+              <a href={`tel:${phone}`}>
+                <Button variant="secondary" className="gap-2">
+                  <Phone className="size-4" strokeWidth={2} /> Call
+                </Button>
+              </a>
+            )}
+            {phone && (
+              <a href={`https://wa.me/${phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
+                <Button variant="secondary" className="gap-2">
+                  <Share2 className="size-4" strokeWidth={2} /> WhatsApp
+                </Button>
+              </a>
+            )}
+            {email && (
+              <a href={`mailto:${email}`}>
+                <Button variant="secondary" className="gap-2">
+                  <Mail className="size-4" strokeWidth={2} /> Email
+                </Button>
+              </a>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
           <Section title="Contact Information" icon={Contact}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Business Email" value={card.businessEmail} />
-              <Field label="Personal Email" value={card.personalEmail} />
-              <Field label="Phone 1" value={card.phone1} />
-              <Field label="Phone 2" value={card.phone2} />
-              <Field label="Website" value={card.website} />
-              <Field label="Address" value={card.address} />
+              <MultiValueField label="Business Email" value={card.businessEmail} kind="email" />
+              <MultiValueField label="Personal Email" value={card.personalEmail} kind="email" />
+              <MultiValueField label="Phone" value={card.phone1} kind="tel" />
+              {/* phone2 only ever has data on cards scanned before phones
+                  consolidated into one field. */}
+              <Field label="Phone (legacy)" value={card.phone2} />
+              <MultiValueField label="Website" value={card.website} kind="url" />
+              <MultiValueField label="Address" value={card.address} />
             </div>
           </Section>
+
+          {card.qrCodeContent && (
+            <Section title="QR Code" icon={QrCode}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-sm text-ink">{card.qrCodeContent}</span>
+                {/* Not every QR code encodes a URL (could be a vCard or
+                    plain text) — only offer "Open" when it looks like one. */}
+                {looksLikeUrl(card.qrCodeContent) && (
+                  <a href={toHref(card.qrCodeContent)} target="_blank" rel="noreferrer">
+                    <Button variant="secondary" className="shrink-0 gap-1.5">
+                      Open <ExternalLink className="size-3.5" strokeWidth={2} />
+                    </Button>
+                  </a>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {card.additionalInfo && (
+            <Section title="Additional Info" icon={FileText}>
+              <p className="whitespace-pre-line text-sm text-ink">{card.additionalInfo}</p>
+            </Section>
+          )}
 
           {(card.linkedin || card.twitter || card.facebook || card.instagram) && (
             <Section title="Social Profiles" icon={Share2}>
@@ -191,19 +289,25 @@ export function CardDetailClient({
           )}
 
           <Section title="Card Images" icon={ImageIcon}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className={cn("grid grid-cols-1 gap-4", card.imageBackUrl && "sm:grid-cols-2")}>
               {([
                 ["Front", card.imageUrl],
-                ["Back", card.imageBackUrl],
+                ...(card.imageBackUrl ? ([["Back", card.imageBackUrl]] as const) : []),
               ] as const).map(([side, src]) => (
                 <div key={side} className="flex flex-col gap-2">
                   <span className="text-xs text-muted">{side}</span>
-                  <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-active-bg text-muted">
+                  <div className="flex max-h-80 items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-active-bg text-muted">
                     {src ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={src} alt={`${side} of ${card.fullName}'s card`} className="size-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setEnlargedImage({ src, alt: `${side} of ${card.fullName}'s card` })}
+                        className="flex max-h-80 w-full cursor-zoom-in items-center justify-center"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={src} alt={`${side} of ${card.fullName}'s card`} className="max-h-80 w-auto max-w-full object-contain" />
+                      </button>
                     ) : (
-                      <ImageIcon className="size-6" strokeWidth={1.5} />
+                      <ImageIcon className="size-6 py-8" strokeWidth={1.5} />
                     )}
                   </div>
                 </div>
@@ -211,17 +315,39 @@ export function CardDetailClient({
             </div>
           </Section>
 
-          <Section title="Media &amp; Notes" icon={Mic}>
-            {card.voiceNoteUrl ? (
-              <div className="flex flex-col gap-2">
-                <audio controls src={card.voiceNoteUrl} className="w-full" />
-                {card.transcribedNote && <p className="text-sm text-muted">{card.transcribedNote}</p>}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted">
-                No voice note added.
-              </div>
-            )}
+          <Section title="Voice Notes" icon={Mic}>
+            <div className="flex flex-col gap-4">
+              <Button variant="secondary" className="w-fit gap-1.5" onClick={() => setRecorderOpen(true)}>
+                <Plus className="size-4" strokeWidth={2} />
+                Add new voice note
+              </Button>
+
+              {voiceNotes.length === 0 ? (
+                <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted">
+                  No voice notes yet — replies to this card on WhatsApp/Telegram, or notes recorded here, will show up.
+                </div>
+              ) : (
+                <ol className="flex flex-col gap-3">
+                  {voiceNotes.map((note) => (
+                    <li key={note.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-warm p-3.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted">
+                          {new Date(note.recordedAt).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      <audio controls src={note.url} className="w-full" />
+                      {note.transcript && <p className="text-sm text-ink">{note.transcript}</p>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
           </Section>
         </div>
 
@@ -253,6 +379,33 @@ export function CardDetailClient({
         confirmLabel="Delete"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={archiveOpen}
+        title={archived ? `Unarchive ${card.fullName}?` : `Archive ${card.fullName}?`}
+        description={
+          archived
+            ? "This contact will return to your active Directory list."
+            : "This contact will be hidden from your active Directory list. You can unarchive it later from the Archived filter."
+        }
+        confirmLabel={archived ? "Unarchive" : "Archive"}
+        danger={!archived}
+        onConfirm={confirmToggleArchived}
+        onCancel={() => setArchiveOpen(false)}
+      />
+
+      <VoiceNoteRecorderDialog
+        cardId={card.id}
+        open={recorderOpen}
+        onClose={() => setRecorderOpen(false)}
+        onSaved={(note) => setVoiceNotes((prev) => [note, ...prev])}
+      />
+
+      <ImageLightbox
+        src={enlargedImage?.src ?? null}
+        alt={enlargedImage?.alt ?? ""}
+        onClose={() => setEnlargedImage(null)}
       />
     </div>
   );

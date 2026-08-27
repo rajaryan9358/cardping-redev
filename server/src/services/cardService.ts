@@ -1,6 +1,7 @@
 import { visitingCardsRepo } from "../db/repositories/visitingCards.repo";
 import { cardMessageRefsRepo } from "../db/repositories/cardMessageRefs.repo";
-import { extractCardFromImages } from "../integrations/openai/vision";
+import { aiUsageLogRepo } from "../db/repositories/aiUsageLog.repo";
+import { extractCardWithMeta, VisionCallMeta } from "../integrations/ai/vision";
 import { supabaseStorage } from "../integrations/storage/supabaseStorage";
 import { Channel, ExtractedCard, VisitingCard } from "../types/domain";
 import { withScanSlot } from "./scanQueue";
@@ -27,10 +28,10 @@ export interface ProcessCardResult {
 }
 
 /** The one place both bots turn a business-card photo into a
- * `visiting_cards` row: extract structured fields with GPT-4o vision
- * (merging both sides in one call when a back image is present), persist
- * the row, then upload the original photo(s) to Supabase Storage and link
- * them back onto the row.
+ * `visiting_cards` row: extract structured fields via vision (OpenAI or
+ * Gemini, per VISION_PROVIDER — merging both sides in one call when a
+ * back image is present), persist the row, then upload the original
+ * photo(s) to Supabase Storage and link them back onto the row.
  *
  * The upload(s) are NOT awaited before returning — the bot's reply (card
  * summary + contact card) is built entirely from `extracted`, it never
@@ -46,18 +47,41 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
   // memory past PM2's restart cap. Anything beyond the concurrency cap
   // queues here rather than firing unbounded work.
   const { card, extracted } = await withScanSlot(async () => {
-    const extracted = await extractCardFromImages(
-      input.imageBuffer,
-      input.mimeType,
-      input.backImageBuffer,
-      input.backMimeType,
-    );
+    let visionMeta: VisionCallMeta | undefined;
+    let extracted;
+    try {
+      const result = await extractCardWithMeta(input.imageBuffer, input.mimeType, input.backImageBuffer, input.backMimeType);
+      extracted = result.extracted;
+      visionMeta = result.meta;
+    } catch (err) {
+      // extractCardWithMeta attaches its own meta to the thrown error so a
+      // failed call still gets logged — there's no card_id yet at this
+      // point (extraction runs before the row exists), so this entry logs
+      // with cardId null.
+      const meta = (err as { visionMeta?: VisionCallMeta }).visionMeta;
+      if (meta) await aiUsageLogRepo.record({ task: "vision_extraction", ...meta, confidence: null });
+      throw err;
+    }
 
     const card = await visitingCardsRepo.create({
       userId: input.userId,
       eventId: input.eventId,
       uploadedBy: input.uploadedBy,
       extracted,
+      provider: visionMeta.provider,
+      model: visionMeta.model,
+    });
+
+    await aiUsageLogRepo.record({
+      task: "vision_extraction",
+      provider: visionMeta.provider,
+      model: visionMeta.model,
+      cardId: card.id,
+      inputTokens: visionMeta.inputTokens,
+      outputTokens: visionMeta.outputTokens,
+      confidence: extracted.confidence ?? null,
+      latencyMs: visionMeta.latencyMs,
+      success: true,
     });
 
     return { card, extracted };

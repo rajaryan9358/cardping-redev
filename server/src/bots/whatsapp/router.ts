@@ -31,10 +31,22 @@ export async function routeWhatsAppWebhook(body: unknown): Promise<void> {
   // Not yet linked to a dashboard account — hold off on everything else
   // and push them toward signup instead. Applies to every message, not
   // just the first, per product decision: no scanning until they link.
-  const link = await channelLinksRepo.findByUsersId(user.user_id);
+  const link = await channelLinksRepo.findActiveByUsersId(user.user_id);
   if (!link) {
-    const onboardingUrl = await channelOnboardingService.createOnboardingLink("whatsapp", message.from);
-    await whatsappClient.sendText(message.phoneNumberId, message.from, Copy.channelOnboardingPrompt(onboardingUrl));
+    // Distinguish "never linked" (signup) from "linked before, currently
+    // disconnected" (welcome back + login, so reconnecting picks up the
+    // same account/history instead of being pitched free credits again).
+    const everLinked = await channelLinksRepo.findAnyByUsersId(user.user_id);
+    const onboardingUrl = await channelOnboardingService.createOnboardingLink(
+      "whatsapp",
+      message.from,
+      everLinked ? "login" : "signup",
+    );
+    await whatsappClient.sendText(
+      message.phoneNumberId,
+      message.from,
+      everLinked ? Copy.welcomeBackPrompt(onboardingUrl) : Copy.channelOnboardingPrompt(onboardingUrl),
+    );
     return;
   }
 

@@ -7,7 +7,7 @@ export default async function TransactionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ProfileHeader title="Transaction History" description="Your subscription payments and coin purchases." />
+      <ProfileHeader title="Transaction History" description="Your subscription payments and credit purchases." />
       <TransactionsClient transactions={transactions} />
     </div>
   );

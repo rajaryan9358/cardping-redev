@@ -38,7 +38,7 @@ export async function tryContinuePendingState(
       const name = msg.text?.trim();
       if (!name) return false;
       await usersRepo.setState(user.user_id, "idle");
-      const event = await setActiveEvent(user.user_id, name);
+      const event = await setActiveEvent(user.user_id, name, user.account_id);
       if (user.pending_front_media_id) {
         await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
       } else {
@@ -55,7 +55,7 @@ export async function tryContinuePendingState(
       }
       if (msg.buttonId?.startsWith(Ids.eventPickPrefix)) {
         const eventId = msg.buttonId.slice(Ids.eventPickPrefix.length);
-        const eventName = await setActiveEventById(user.user_id, eventId);
+        const eventName = await setActiveEventById(user.user_id, eventId, user.account_id);
         await usersRepo.setState(user.user_id, "idle");
         if (user.pending_front_media_id) {
           await resumeScanAfterEventSet(phoneNumberId, from, user.user_id);
@@ -143,7 +143,8 @@ export async function tryContinuePendingState(
       await usersRepo.setState(user.user_id, "idle");
       const { buffer } = await whatsappClient.downloadMediaById(msg.mediaId);
       await attachVoiceNoteToCard(user.user_id, card, buffer);
-      await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteSaved);
+      const confirmMessageId = await whatsappClient.sendText(phoneNumberId, from, Copy.voiceNoteSaved);
+      if (confirmMessageId) await registerCardMessageRef(card.id, confirmMessageId);
       return true;
     }
 

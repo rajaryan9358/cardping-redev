@@ -5,14 +5,20 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { Pagination } from "@/components/ui/Pagination";
 import { TableCard, TableHeaderRow, Th, Td, Tr } from "@/components/ui/Table";
 import { Transaction } from "@/lib/types";
 
 const STATUS_TONE = { completed: "success", pending: "pending", failed: "danger" } as const;
 const STATUS_LABEL = { completed: "Completed", pending: "Pending", failed: "Failed" } as const;
+const DEFAULT_PAGE_SIZE = 20;
 
 export function TransactionsClient({ transactions }: { transactions: Transaction[] }) {
   const [viewingInvoice, setViewingInvoice] = useState<Transaction | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(transactions.length / pageSize));
+  const paged = transactions.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <TableCard>
@@ -29,11 +35,13 @@ export function TransactionsClient({ transactions }: { transactions: Transaction
         <Th align="right">Status</Th>
         <div className="w-12" />
       </TableHeaderRow>
-      {transactions.map((txn) => (
+      {paged.map((txn) => (
         <Tr key={txn.id}>
-          <Td>{new Date(txn.occurredAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</Td>
+          <Td>{new Date(txn.occurredAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</Td>
           <Td className="flex-[1.6]">{txn.description}</Td>
-          <Td align="right">{txn.amountInr > 0 ? `+₹${txn.amountInr.toFixed(2)}` : "—"}</Td>
+          <Td align="right" className={txn.status === "failed" ? "text-danger-text" : undefined}>
+            {txn.amountInr > 0 ? `${txn.status === "failed" ? "" : "+"}₹${txn.amountInr.toFixed(2)}` : "—"}
+          </Td>
           <Td align="right">
             <Badge tone={STATUS_TONE[txn.status]}>{STATUS_LABEL[txn.status]}</Badge>
           </Td>
@@ -47,6 +55,17 @@ export function TransactionsClient({ transactions }: { transactions: Transaction
         </Tr>
       ))}
       {transactions.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No transactions yet.</p>}
+      <Pagination
+        page={page}
+        pageCount={pageCount}
+        totalItems={transactions.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
 
       <Modal open={!!viewingInvoice} onClose={() => setViewingInvoice(null)} title="Invoice">
         {viewingInvoice && (

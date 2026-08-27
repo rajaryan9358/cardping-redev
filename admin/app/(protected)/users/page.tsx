@@ -3,13 +3,15 @@ import { adminSubscriptionsRepo } from "../../../lib/repositories/adminSubscript
 import { env } from "../../../lib/env";
 import { UsersTable } from "./UsersTable";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 20;
 
 export default async function UsersPage({
   searchParams,
 }: {
   searchParams: {
     page?: string;
+    pageSize?: string;
     search?: string;
     status?: string;
     expiresBefore?: string;
@@ -18,13 +20,14 @@ export default async function UsersPage({
   };
 }) {
   const page = Math.max(1, Number(searchParams.page) || 1);
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.pageSize)) ? Number(searchParams.pageSize) : DEFAULT_PAGE_SIZE;
   const search = searchParams.search ?? "";
   const status = (searchParams.status || undefined) as UserStatusFilter | undefined;
   const expiresBefore = searchParams.expiresBefore || undefined;
   const expiresAfter = searchParams.expiresAfter || undefined;
   const sort = searchParams.sort || undefined;
   const [{ rows, total }, plans] = await Promise.all([
-    adminUsersRepo.listUsers({ search, status, expiresBefore, expiresAfter, sort, page, pageSize: PAGE_SIZE }),
+    adminUsersRepo.listUsers({ search, status, expiresBefore, expiresAfter, sort, page, pageSize }),
     adminSubscriptionsRepo.listPlans(),
   ]);
 
@@ -38,7 +41,7 @@ export default async function UsersPage({
         rows={rows}
         total={total}
         page={page}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         search={search}
         status={status ?? ""}
         expiresBefore={expiresBefore ?? ""}

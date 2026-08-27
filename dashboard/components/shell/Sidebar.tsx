@@ -7,14 +7,14 @@ import { cn } from "@/lib/cn";
 import { performLogout } from "@/lib/logout";
 import { useMobileNav } from "./MobileNavContext";
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/directory", label: "Directory", icon: Users },
   { href: "/events", label: "Events", icon: Calendar },
   { href: "/subscription", label: "Subscription", icon: CreditCard },
 ];
 
-const PROFILE_ITEMS = [
+export const PROFILE_ITEMS = [
   { href: "/profile/personal", label: "Personal Info", icon: User },
   { href: "/profile/channels", label: "Channels", icon: Plug },
   { href: "/profile/preferences", label: "Scan Preferences", icon: Settings },

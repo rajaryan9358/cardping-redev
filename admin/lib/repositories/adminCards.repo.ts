@@ -22,8 +22,12 @@ export interface AdminCardRow {
   twitter: string | null;
   facebook: string | null;
   instagram: string | null;
+  qr_code_content: string | null;
+  additional_info: string | null;
   uploaded_by: string | null;
   extraction_confidence: number | null;
+  extraction_provider: string | null;
+  extraction_model: string | null;
   storage_path: string | null;
   image_public_url: string | null;
   created_at: string;
@@ -35,7 +39,7 @@ export interface AdminCardRow {
 // avoids a second round-trip when Edit is clicked (negligible payload
 // cost at this page size).
 const CARD_ROW_COLUMNS =
-  "id, user_id, event_id, full_name, position, company_name, business_email, personal_email, phone1, phone2, website, address, linkedin, twitter, facebook, instagram, uploaded_by, extraction_confidence, storage_path, image_public_url, created_at, user:users!visiting_cards_user_id_fkey(full_name, email)";
+  "id, user_id, event_id, full_name, position, company_name, business_email, personal_email, phone1, phone2, website, address, linkedin, twitter, facebook, instagram, qr_code_content, additional_info, uploaded_by, extraction_confidence, extraction_provider, extraction_model, storage_path, image_public_url, created_at, user:users!visiting_cards_user_id_fkey(full_name, email)";
 
 export interface ListCardsParams {
   maxConfidence: number;
@@ -47,6 +51,16 @@ export interface ListCardsParams {
   eventId?: string;
   // Free-text, independent of and combinable with every filter above.
   search?: string;
+  // Availability filters — AND'd together and with everything else above
+  // (checking more than one narrows further, e.g. "has email AND has
+  // website"), each independently toggleable. hasWhatsapp and hasPhone
+  // both key off phone1 (there's no separate "this number is WhatsApp"
+  // field on a scanned card) — kept as two distinct filters anyway since
+  // that's how they're presented in the UI.
+  hasWhatsapp?: boolean;
+  hasEmail?: boolean;
+  hasPhone?: boolean;
+  hasWebsite?: boolean;
   sort?: string;
   page: number;
   pageSize: number;
@@ -57,7 +71,16 @@ export type ListCardsFilterParams = Omit<ListCardsParams, "page" | "pageSize">;
 /** Builds the filtered (not yet ordered/paginated/counted) query — shared
  * by listLowConfidenceCards (DB-level .range() pagination) and
  * listCardsForExport (no range, matching the current filters exactly). */
-function buildFilteredCardsQuery({ maxConfidence, userIds, eventId, search }: ListCardsFilterParams) {
+function buildFilteredCardsQuery({
+  maxConfidence,
+  userIds,
+  eventId,
+  search,
+  hasWhatsapp,
+  hasEmail,
+  hasPhone,
+  hasWebsite,
+}: ListCardsFilterParams) {
   let query = supabase.from("visiting_cards").select(CARD_ROW_COLUMNS, { count: "exact" });
 
   // "All" (maxConfidence >= 1, the top segmented-control option) means
@@ -72,6 +95,9 @@ function buildFilteredCardsQuery({ maxConfidence, userIds, eventId, search }: Li
   }
   if (userIds && userIds.length > 0) query = query.in("user_id", userIds);
   if (eventId) query = query.eq("event_id", eventId);
+  if (hasWhatsapp || hasPhone) query = query.not("phone1", "is", null);
+  if (hasWebsite) query = query.not("website", "is", null);
+  if (hasEmail) query = query.or("business_email.not.is.null,personal_email.not.is.null");
   const term = search?.trim();
   if (term) {
     const escaped = term.replace(/[%_,]/g, (c) => `\\${c}`);
@@ -130,6 +156,27 @@ async function getCardById(cardId: string) {
   return data;
 }
 
+export interface AdminVoiceNoteRow {
+  id: string;
+  public_url: string;
+  transcript: string | null;
+  created_at: string;
+}
+
+// A card can have any number of these now (see
+// server/db/2026-08-27_multiple_voice_notes.sql) — visiting_cards.voice_note_*/
+// transcribed_note only ever held the single most recent one and are frozen
+// going forward, so this is the real source for the card detail page.
+async function listVoiceNotesForCard(cardId: string): Promise<AdminVoiceNoteRow[]> {
+  const { data, error } = await supabase
+    .from("card_voice_notes")
+    .select("id, public_url, transcript, created_at")
+    .eq("card_id", cardId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as AdminVoiceNoteRow[];
+}
+
 async function updateExtractedFields(
   cardId: string,
   fields: Record<string, unknown>,
@@ -153,6 +200,7 @@ export const adminCardsRepo = {
   listLowConfidenceCards,
   listCardsForExport,
   getCardById,
+  listVoiceNotesForCard,
   updateExtractedFields,
   deleteCard,
   bulkDeleteCards,

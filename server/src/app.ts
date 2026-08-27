@@ -12,6 +12,11 @@ import { apiRouter } from "./routes/api";
 export function createApp(): Express {
   const app = express();
 
+  // nginx sits in front of every request — without this, req.ip resolves
+  // to nginx's own loopback address instead of the real client IP (used
+  // for session location lookups).
+  app.set("trust proxy", true);
+
   app.use(pinoHttp({ logger }));
   app.use(slowRequestWatcher);
   app.use(cookieParser());

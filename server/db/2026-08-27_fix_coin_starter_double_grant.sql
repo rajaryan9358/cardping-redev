@@ -1,0 +1,22 @@
+-- Fixes the coin starter-balance double/triple-grant bug: a new bot
+-- channel identity (users row) used to default coin_balance to the full
+-- COINS_STARTER_BALANCE env value, even though a channel can't scan
+-- anything until it's linked to an account (see whatsapp/router.ts and
+-- telegram/router.ts — "no scanning until they link"). walletService's
+-- mergeLegacyBalanceOnLink then transferred that full balance into the
+-- account on every channel link, stacking on top of the one-time grant
+-- onboardingService.completeOnboarding already gives the account —
+-- +50 per channel linked, on top of the wizard's own +50, is how a
+-- COINS_STARTER_BALANCE=50 env produced 100-150 real coins per account.
+--
+-- Going forward (server/src/db/repositories/users.repo.ts), new identities
+-- are created with coin_balance = 0 directly, so this is only needed to
+-- match the column default for any insert path that omits the field, and
+-- to fix the table for anyone re-running schema.sql fresh.
+alter table public.users alter column coin_balance set default 0;
+
+-- This migration does NOT retroactively correct already-affected account
+-- balances (accounts that received 100/150 coins instead of 50) — that
+-- needs a separate reconciliation decision (how much to claw back from an
+-- account that's already spent some of the extra), not a blind default
+-- change. Ask before running anything like that against production.

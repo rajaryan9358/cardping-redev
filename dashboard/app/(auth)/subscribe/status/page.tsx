@@ -10,7 +10,7 @@ export default function SubscribeStatusPage() {
     <Suspense>
       <StatusClient
         title="Plan activated!"
-        description="We're confirming it now — your plan and coin balance will update within a minute or two."
+        description="We're confirming it now — your plan and credit balance will update within a minute or two."
       />
     </Suspense>
   );

@@ -11,7 +11,13 @@ export default async function DirectoryPage({ searchParams }: { searchParams: { 
         <h1 className="text-[28px] font-semibold tracking-tight text-ink">Directory</h1>
         <p className="text-sm text-muted">Search, filter, and manage every contact you&apos;ve scanned.</p>
       </div>
-      <ScansExplorer initialCards={cards} events={events} allTags={allTags(cards)} initialQuery={searchParams.query ?? ""} />
+      <ScansExplorer
+        initialCards={cards}
+        events={events}
+        allTags={allTags(cards)}
+        initialQuery={searchParams.query ?? ""}
+        persistKey="directory"
+      />
     </div>
   );
 }

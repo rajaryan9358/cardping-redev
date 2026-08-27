@@ -10,9 +10,17 @@ const LINK_CODE_TTL_MINUTES = 10;
 
 /** Links a bot channel identity to a dashboard account and, in the same
  * step, transfers whatever legacy coin balance that channel had
- * accumulated (see walletService.mergeLegacyBalanceOnLink). Throws
- * whatever channelLinksRepo.create throws on a unique-violation — callers
- * catch that and surface a 409 "already connected elsewhere," not a 500. */
+ * accumulated (see walletService.mergeLegacyBalanceOnLink).
+ *
+ * If this exact channel identity (idx_channel_links_users_id is unique on
+ * users_id — at most one channel_links row per identity, ever) was linked
+ * before, reconnects that same row instead of inserting a new one, so its
+ * connection history and everything scoped off it (cards, events, the
+ * account's current-event state) picks back up exactly where it left off.
+ * Throws a fake unique-violation ({code: "23505"}) if that prior link
+ * belongs to a *different* account — same shape channelLinksRepo.create
+ * throws on a real DB conflict, so callers only need one catch branch for
+ * "already connected elsewhere." */
 export async function linkChannel(
   accountId: string,
   usersId: string,
@@ -20,7 +28,16 @@ export async function linkChannel(
   channelIdentifier: string,
   legacyBalance: number,
 ): Promise<ChannelLink> {
-  const link = await channelLinksRepo.create({ accountId, usersId, channel, channelIdentifier });
+  const existing = await channelLinksRepo.findAnyByUsersId(usersId);
+  let link: ChannelLink;
+  if (existing) {
+    if (existing.account_id !== accountId) {
+      throw Object.assign(new Error("channel already linked to a different account"), { code: "23505" });
+    }
+    link = await channelLinksRepo.reactivate(existing.id, channel, channelIdentifier);
+  } else {
+    link = await channelLinksRepo.create({ accountId, usersId, channel, channelIdentifier });
+  }
   await walletService.mergeLegacyBalanceOnLink(usersId, accountId, legacyBalance);
   return link;
 }

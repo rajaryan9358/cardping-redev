@@ -1,10 +1,12 @@
 import { adminSubscriptionsRepo } from "../../../lib/repositories/adminSubscriptions.repo";
 import { Tabs } from "../../../components/ui/Tabs";
+import { EarningsStatCard } from "./EarningsStatCard";
 import { SubscribedUsersTable } from "./SubscribedUsersTable";
 import { PlansManager } from "./PlansManager";
 import { TopUpsManager } from "./TopUpsManager";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 20;
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
@@ -18,12 +20,13 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: { page?: string };
+  searchParams: { page?: string; pageSize?: string };
 }) {
   const page = Math.max(1, Number(searchParams.page) || 1);
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.pageSize)) ? Number(searchParams.pageSize) : DEFAULT_PAGE_SIZE;
   const [summary, { rows, total }, plans, allPlans, topUps] = await Promise.all([
     adminSubscriptionsRepo.getSubscriptionSummary(),
-    adminSubscriptionsRepo.listSubscribedUsers(page, PAGE_SIZE),
+    adminSubscriptionsRepo.listSubscribedUsers(page, pageSize),
     adminSubscriptionsRepo.listPlans(),
     adminSubscriptionsRepo.listAllPlans(),
     adminSubscriptionsRepo.listAllTopUps(),
@@ -40,7 +43,7 @@ export default async function SubscriptionsPage({
         <StatCard label="Total subscribed" value={String(summary.totalSubscribed)} />
         <StatCard label="Active" value={String(summary.active)} />
         <StatCard label="Expired" value={String(summary.expired)} />
-        <StatCard label="Total earning" value={`₹${summary.totalEarningInr.toLocaleString("en-US")}`} />
+        <EarningsStatCard value={`₹${summary.totalEarningInr.toLocaleString("en-US")}`} />
       </section>
 
       <Tabs
@@ -48,7 +51,7 @@ export default async function SubscriptionsPage({
           {
             id: "users",
             label: "Subscribed users",
-            content: <SubscribedUsersTable rows={rows} plans={plans} total={total} page={page} pageSize={PAGE_SIZE} />,
+            content: <SubscribedUsersTable rows={rows} plans={plans} total={total} page={page} pageSize={pageSize} />,
           },
           { id: "plans", label: "Plans", content: <PlansManager plans={allPlans} /> },
           { id: "topups", label: "Top-ups", content: <TopUpsManager topUps={topUps} /> },

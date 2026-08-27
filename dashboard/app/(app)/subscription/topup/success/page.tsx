@@ -10,7 +10,7 @@ export default function TopUpSuccessPage() {
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-10 text-center shadow-soft animate-fade-up">
       <SuccessCheck />
       <h1 className="text-2xl font-semibold text-ink">Payment received</h1>
-      <p className="text-sm text-muted">We&apos;re confirming it now — your coins will land in your balance within a minute or two.</p>
+      <p className="text-sm text-muted">We&apos;re confirming it now — your credits will land in your balance within a minute or two.</p>
 
       <div className="flex w-full gap-3 pt-2">
         <Link href="/home" className="flex-1">

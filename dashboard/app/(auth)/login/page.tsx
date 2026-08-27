@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { TextField } from "@/components/ui/TextField";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
@@ -161,10 +162,8 @@ function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <TextField
+          <PasswordField
             label="Password"
-            type="password"
-            placeholder="••••••••"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -217,8 +216,8 @@ function LoginForm() {
         <Button
           variant="secondary"
           className="w-full gap-3 py-3"
-          disabled={!authConfig.googleEnabled}
-          title={authConfig.googleEnabled ? undefined : "Google sign-in isn't set up yet"}
+          disabled={!authConfig.loading && !authConfig.googleEnabled}
+          title={authConfig.loading || authConfig.googleEnabled ? undefined : "Google sign-in isn't set up yet"}
           onClick={() => {
             window.location.href = "/api/auth/google/start";
           }}
@@ -230,8 +229,12 @@ function LoginForm() {
           <Button
             variant="secondary"
             className="w-full gap-3 py-3"
-            disabled={!authConfig.whatsappOtpEnabled}
-            title={authConfig.whatsappOtpEnabled ? undefined : "SMS/WhatsApp sign-in isn't set up yet — use email and password"}
+            disabled={!authConfig.loading && !authConfig.whatsappOtpEnabled}
+            title={
+              authConfig.loading || authConfig.whatsappOtpEnabled
+                ? undefined
+                : "SMS/WhatsApp sign-in isn't set up yet — use email and password"
+            }
             onClick={() => setMode("otp")}
           >
             <Smartphone className="size-[18px]" strokeWidth={2} />

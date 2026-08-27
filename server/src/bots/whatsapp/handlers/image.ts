@@ -142,16 +142,18 @@ export async function sendScanResult(
   );
   if (summaryMessageId) await registerCardMessageRef(card.id, summaryMessageId);
 
+  const firstEmail = extracted.business_emails[0] ?? extracted.personal_emails[0] ?? "";
+  const firstPhone = extracted.phones[0] ?? "";
   const contactMessageId = await whatsappClient.sendContactCard(phoneNumberId, from, {
     formattedName: extracted.person_name || extracted.company_name,
     firstName: (extracted.person_name || extracted.company_name).split(" ")[0] ?? "",
     lastName: (extracted.person_name || extracted.company_name).split(" ").slice(1).join(" "),
     company: extracted.company_name,
     title: extracted.job_title,
-    email: extracted.primary_email,
-    phone: extracted.primary_phone,
-    waId: extracted.primary_phone.replace(/\D/g, ""),
-    website: extracted.website,
+    email: firstEmail,
+    phone: firstPhone,
+    waId: firstPhone.replace(/\D/g, ""),
+    website: extracted.websites[0] ?? "",
   });
   if (contactMessageId) await registerCardMessageRef(card.id, contactMessageId);
 

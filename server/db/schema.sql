@@ -29,7 +29,14 @@ create table if not exists public.users (
   id uuid not null default gen_random_uuid(),
   email text null,
   full_name text null,
-  coin_balance integer not null default 5,
+  -- A channel identity can't scan anything until it's linked to an
+  -- account (see whatsapp/router.ts, telegram/router.ts — no scanning
+  -- until linked), so it has no legitimate pre-link use for a nonzero
+  -- balance. The one-time starter bonus is granted exactly once,
+  -- account-wide, by onboardingService.completeOnboarding — see
+  -- 2026-08-27_fix_coin_starter_double_grant.sql for why this used to
+  -- default nonzero and what that caused.
+  coin_balance integer not null default 0,
   subscription_tier text null default 'FREE'::text,
   metadata jsonb null default '{}'::jsonb,
   created_at timestamp with time zone null default now(),
@@ -245,7 +252,9 @@ select
   vc.transcribed_note,
   vc.created_at,
   vc.updated_at,
-  vc.created_at::date as card_date
+  vc.created_at::date as card_date,
+  vc.qr_code_content,
+  vc.additional_info
 from
   public.visiting_cards vc
   join public.users u on u.id = vc.user_id
@@ -821,8 +830,12 @@ select
   u.telegram_id,
   u.telegram_chat_id,
   u.coin_balance,
-  u.active_event_id,
-  e.name as active_event_name,
+  -- Account-wide once linked (shared across every channel on that
+  -- account, and immune to any one channel disconnecting/reconnecting) —
+  -- falls back to the per-channel columns for bot-only usage with no
+  -- account at all. See db/2026-08-27_channel_account_model_fix.sql.
+  coalesce(a.active_event_id, u.active_event_id) as active_event_id,
+  coalesce(ae.name, ue.name) as active_event_name,
   u.active_visiting_card_id,
   vc.full_name as active_card_name,
   vc.company_name as active_card_company,
@@ -838,10 +851,13 @@ select
   u.plan_id,
   u.plan_expires_at,
   u.last_login,
-  -- Resolved through channel_links/accounts when this channel identity has
-  -- been linked to a dashboard login, falling back to the legacy columns
-  -- above otherwise — see the "dashboard/ real accounts" block for why the
-  -- legacy columns are a permanent fallback, not transitional.
+  -- Resolved through the channel identity's currently-ACTIVE channel_links
+  -- row (unlinked_at is null) — a disconnected identity reads as
+  -- account_id null here, same as if it had never been linked, which is
+  -- exactly what gates the bot's "not linked yet" onboarding prompt.
+  -- Falls back to the legacy columns above otherwise — see the
+  -- "dashboard/ real accounts" block for why those are a permanent
+  -- fallback, not transitional.
   cl.account_id,
   a.email as linked_account_email,
   coalesce(a.coin_balance, u.coin_balance) as effective_coin_balance,
@@ -853,17 +869,18 @@ select
   -- preferences" blocks above. No legacy fallback needed for the account
   -- columns (scan_both_sides/event_lifetime_hours): every bot user is
   -- already required to be linked before any of this is reachable.
-  u.active_event_set_at,
+  coalesce(a.active_event_set_at, u.active_event_set_at) as active_event_set_at,
   u.pending_front_media_id,
   u.pending_back_media_id,
   a.scan_both_sides,
   a.event_lifetime_hours
 from
   public.users u
-  left join public.events e on e.id = u.active_event_id
+  left join public.events ue on ue.id = u.active_event_id
   left join public.visiting_cards vc on vc.id = u.active_visiting_card_id
-  left join public.channel_links cl on cl.users_id = u.id
-  left join public.accounts a on a.id = cl.account_id;
+  left join public.channel_links cl on cl.users_id = u.id and cl.unlinked_at is null
+  left join public.accounts a on a.id = cl.account_id
+  left join public.events ae on ae.id = a.active_event_id;
 
 -- ── card_message_refs ───────────────────────────────────────────────────
 -- Every message a card's result touches (the front photo, the back photo,
@@ -938,3 +955,8 @@ alter table public.transactions drop constraint if exists transactions_account_i
 alter table public.transactions
   add constraint transactions_account_id_fkey
   foreign key (account_id) references public.accounts (id) on delete set null;
+
+-- Schema changes from this point on are tracked as separate dated files in
+-- this same db/ directory (see 2026-08-25_dashboard_polish_batch.sql for
+-- the first one) rather than appended here, so each update is reviewable
+-- and applyable on its own instead of as one ever-growing file.

@@ -3,6 +3,7 @@
 import { Megaphone, ScanLine } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
 import { Account } from "@/lib/types";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 
@@ -16,17 +17,26 @@ const LIFETIME_OPTIONS: { label: string; hours: number | null }[] = [
 ];
 
 export function PreferencesForm({ account }: { account: Account }) {
-  const [scanBothSides, setScanBothSides] = useState(account.scanBothSides);
-  const [eventLifetimeHours, setEventLifetimeHours] = useState<number | null>(account.eventLifetimeHours);
-  const [marketingOptIn, setMarketingOptIn] = useState(account.marketingOptIn);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSavedState] = useState({
+    scanBothSides: account.scanBothSides,
+    eventLifetimeHours: account.eventLifetimeHours,
+    marketingOptIn: account.marketingOptIn,
+  });
+  const [scanBothSides, setScanBothSides] = useState(saved.scanBothSides);
+  const [eventLifetimeHours, setEventLifetimeHours] = useState<number | null>(saved.eventLifetimeHours);
+  const [marketingOptIn, setMarketingOptIn] = useState(saved.marketingOptIn);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const showToast = useToast();
+
+  const isDirty =
+    scanBothSides !== saved.scanBothSides ||
+    eventLifetimeHours !== saved.eventLifetimeHours ||
+    marketingOptIn !== saved.marketingOptIn;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setSaved(false);
     setSubmitting(true);
     try {
       const [settingsRes, marketingRes] = await Promise.all([
@@ -41,8 +51,8 @@ export function PreferencesForm({ account }: { account: Account }) {
       ]);
       await parseJsonOrThrow(settingsRes);
       await parseJsonOrThrow(marketingRes);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setSavedState({ scanBothSides, eventLifetimeHours, marketingOptIn });
+      showToast("Preferences saved successfully");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -119,10 +129,9 @@ export function PreferencesForm({ account }: { account: Account }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button type="submit" className="self-start" loading={submitting}>
+          <Button type="submit" className="self-start" loading={submitting} disabled={!isDirty}>
             Save Preferences
           </Button>
-          {saved && <span className="text-xs font-medium text-success-text">Saved.</span>}
         </div>
       </form>
     </div>

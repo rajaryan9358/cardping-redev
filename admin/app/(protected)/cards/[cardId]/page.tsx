@@ -1,11 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Contact, History, Image as ImageIcon, LucideIcon, Mic, Share2, Tag as TagIcon } from "lucide-react";
+import {
+  Contact,
+  ExternalLink,
+  FileText,
+  History,
+  Image as ImageIcon,
+  LucideIcon,
+  Mic,
+  QrCode,
+  Share2,
+  Tag as TagIcon,
+} from "lucide-react";
 import { adminCardsRepo } from "../../../../lib/repositories/adminCards.repo";
 import { TableCard } from "../../../../components/ui/Table";
 import { Badge } from "../../../../components/ui/Badge";
+import { Button } from "../../../../components/ui/Button";
+import { BackLink } from "../../../../components/ui/BackLink";
 import { formatDateTime } from "../../../../lib/format";
 import { CardDetailActions } from "./CardDetailActions";
+import { CardImagesSection } from "./CardImagesSection";
+import { ChannelIcon } from "@/components/ChannelIcon";
 
 function Section({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
@@ -29,16 +44,61 @@ function Field({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+type MultiValueKind = "text" | "tel" | "email" | "url";
+
+// A field can hold more than one value now (see
+// server/db/2026-08-27_card_multi_value_fields.sql) — stored as one
+// newline-joined column, shown here as its own stacked, individually
+// actionable box per value (in the order extraction found them — see
+// visionPrompt.ts's "most prominent first" instruction).
+function MultiValueField({ label, value, kind = "text" }: { label: string; value: string | null; kind?: MultiValueKind }) {
+  const lines = value?.split("\n").filter((l) => l.trim().length > 0) ?? [];
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 sm:col-span-2">
+      <span className="text-xs text-muted">{label}</span>
+      <div className="flex flex-col gap-1.5">
+        {lines.map((line, i) => {
+          const href =
+            kind === "tel" ? `tel:${line}` : kind === "email" ? `mailto:${line}` : kind === "url" ? toHref(line) : null;
+          const external = kind === "url";
+          const content = <span className="truncate text-sm text-ink">{line}</span>;
+          const boxClass =
+            "flex items-center justify-between gap-2 rounded-lg border border-border bg-active-bg px-3.5 py-2.5" +
+            (href ? " transition-colors hover:border-accent hover:bg-accent-soft/40" : "");
+
+          if (!href) {
+            return (
+              <div key={i} className={boxClass}>
+                {content}
+              </div>
+            );
+          }
+          return (
+            <a key={i} href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} className={boxClass}>
+              {content}
+              {external && <ExternalLink className="size-3.5 shrink-0 text-muted" strokeWidth={2} />}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function toHref(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 export default async function CardDetailPage({ params }: { params: { cardId: string } }) {
   const card = await adminCardsRepo.getCardById(params.cardId);
   if (!card) notFound();
+  const voiceNotes = await adminCardsRepo.listVoiceNotesForCard(card.id);
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/cards" className="flex w-fit items-center gap-1.5 text-sm text-muted hover:text-ink">
-        <ArrowLeft className="size-4" strokeWidth={2} />
-        Back to cards
-      </Link>
+      <BackLink basePath="/cards" label="Back to cards" />
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -48,8 +108,9 @@ export default async function CardDetailPage({ params }: { params: { cardId: str
           </div>
           <p className="mt-1 text-sm text-muted">
             {card.company_name || "—"} · Scanned {formatDateTime(card.created_at)} via{" "}
-            <span className="capitalize">{card.uploaded_by || "—"}</span>
+            <ChannelIcon channel={card.uploaded_by} size={16} />
             {card.extraction_confidence !== null && ` · ${Math.round(card.extraction_confidence * 100)}% confidence`}
+            {card.extraction_model && ` · Extracted with ${card.extraction_provider ?? ""} / ${card.extraction_model}`}
           </p>
           <p className="mt-1 text-xs text-muted">
             Scanned by{" "}
@@ -74,14 +135,35 @@ export default async function CardDetailPage({ params }: { params: { cardId: str
         <div className="flex flex-col gap-6 lg:col-span-2">
           <Section title="Contact Information" icon={Contact}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Business Email" value={card.business_email} />
-              <Field label="Personal Email" value={card.personal_email} />
-              <Field label="Phone 1" value={card.phone1} />
-              <Field label="Phone 2" value={card.phone2} />
-              <Field label="Website" value={card.website} />
-              <Field label="Address" value={card.address} />
+              <MultiValueField label="Business Email" value={card.business_email} kind="email" />
+              <MultiValueField label="Personal Email" value={card.personal_email} kind="email" />
+              <MultiValueField label="Phone" value={card.phone1} kind="tel" />
+              {/* phone2 only ever has data on cards scanned before phones
+                  consolidated into one field — see visitingCards.repo.ts. */}
+              <Field label="Phone (legacy)" value={card.phone2} />
+              <MultiValueField label="Website" value={card.website} kind="url" />
+              <MultiValueField label="Address" value={card.address} />
             </div>
           </Section>
+
+          {card.qr_code_content && (
+            <Section title="QR Code" icon={QrCode}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-sm text-ink">{card.qr_code_content}</span>
+                <a href={card.qr_code_content} target="_blank" rel="noreferrer">
+                  <Button variant="secondary" className="shrink-0 gap-1.5">
+                    Open <ExternalLink className="size-3.5" strokeWidth={2} />
+                  </Button>
+                </a>
+              </div>
+            </Section>
+          )}
+
+          {card.additional_info && (
+            <Section title="Additional Info" icon={FileText}>
+              <p className="whitespace-pre-line text-sm text-ink">{card.additional_info}</p>
+            </Section>
+          )}
 
           {(card.linkedin || card.twitter || card.facebook || card.instagram) && (
             <Section title="Social Profiles" icon={Share2}>
@@ -109,40 +191,28 @@ export default async function CardDetailPage({ params }: { params: { cardId: str
           )}
 
           <Section title="Card Images" icon={ImageIcon}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {(
-                [
-                  ["Front", card.image_public_url],
-                  ["Back", card.back_image_public_url],
-                ] as const
-              ).map(([side, src]) => (
-                <div key={side} className="flex flex-col gap-2">
-                  <span className="text-xs text-muted">{side}</span>
-                  <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-active-bg text-muted">
-                    {src ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- a scanned
-                      // card's aspect ratio varies per photo, and this app has no
-                      // remote image domain configured for next/image.
-                      <img src={src} alt={`${side} of ${card.full_name || "card"}`} className="size-full object-cover" />
-                    ) : (
-                      <ImageIcon className="size-6" strokeWidth={1.5} />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CardImagesSection
+              frontUrl={card.image_public_url}
+              backUrl={card.back_image_public_url}
+              fullName={card.full_name || ""}
+            />
           </Section>
 
-          <Section title="Media & Notes" icon={Mic}>
-            {card.voice_note_public_url ? (
-              <div className="flex flex-col gap-2">
-                <audio controls src={card.voice_note_public_url} className="w-full" />
-                {card.transcribed_note && <p className="text-sm text-muted">{card.transcribed_note}</p>}
+          <Section title="Voice Notes" icon={Mic}>
+            {voiceNotes.length === 0 ? (
+              <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted">
+                No voice notes added.
               </div>
             ) : (
-              <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted">
-                No voice note added.
-              </div>
+              <ol className="flex flex-col gap-3">
+                {voiceNotes.map((note) => (
+                  <li key={note.id} className="flex flex-col gap-2 rounded-lg border border-border bg-active-bg p-3.5">
+                    <span className="text-xs text-muted">{formatDateTime(note.created_at)}</span>
+                    <audio controls src={note.public_url} className="w-full" />
+                    {note.transcript && <p className="text-sm text-ink">{note.transcript}</p>}
+                  </li>
+                ))}
+              </ol>
             )}
             {card.summary && (
               <div className="mt-4">

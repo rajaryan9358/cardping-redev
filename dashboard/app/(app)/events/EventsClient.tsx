@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { cn } from "@/lib/cn";
+import { isEventUpcoming } from "@/lib/data/events";
 import { EventRecord } from "@/lib/types";
 
 type FilterTab = "all" | "active" | "upcoming" | "inactive";
@@ -18,24 +19,23 @@ const TABS: { id: FilterTab; label: string }[] = [
   { id: "inactive", label: "Inactive" },
 ];
 
-const STATUS_BADGE: Record<EventRecord["status"], { label: string; tone: "success" | "pending" | "accent" }> = {
-  active: { label: "Active", tone: "success" },
-  upcoming: { label: "Upcoming", tone: "accent" },
-  past: { label: "Past", tone: "pending" },
-  draft: { label: "Draft", tone: "pending" },
-};
+function eventBadge(event: EventRecord): { label: string; tone: "success" | "pending" | "accent" } {
+  if (event.activeStatus === "inactive") return { label: "Inactive", tone: "pending" };
+  if (isEventUpcoming(event)) return { label: "Upcoming", tone: "accent" };
+  return { label: "Active", tone: "success" };
+}
 
-function matchesTab(status: EventRecord["status"], tab: FilterTab): boolean {
+function matchesTab(event: EventRecord, tab: FilterTab): boolean {
   if (tab === "all") return true;
-  if (tab === "inactive") return status === "past" || status === "draft";
-  return status === tab;
+  if (tab === "upcoming") return isEventUpcoming(event);
+  return event.activeStatus === tab;
 }
 
 export function EventsClient({ events }: { events: EventRecord[] }) {
   const [tab, setTab] = useState<FilterTab>("all");
   const named = events.filter((e) => !e.isMiscellaneous);
   const totalLeads = events.reduce((sum, e) => sum + e.leadCount, 0);
-  const filtered = named.filter((e) => matchesTab(e.status, tab));
+  const filtered = named.filter((e) => matchesTab(e, tab));
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,7 +53,7 @@ export function EventsClient({ events }: { events: EventRecord[] }) {
 
       <div className="flex gap-4">
         <StatCard label="Total Events" value={named.length} icon={Calendar} />
-        <StatCard label="Active Now" value={named.filter((e) => e.status === "active").length} icon={Users} />
+        <StatCard label="Active Now" value={named.filter((e) => e.activeStatus === "active").length} icon={Users} />
         <StatCard label="Total Leads Captured" value={totalLeads.toLocaleString()} icon={Users} />
       </div>
 
@@ -75,7 +75,7 @@ export function EventsClient({ events }: { events: EventRecord[] }) {
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((event) => {
-          const badge = STATUS_BADGE[event.status];
+          const badge = eventBadge(event);
           return (
             <Link
               key={event.id}

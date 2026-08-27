@@ -7,12 +7,17 @@ export interface CreateVisitingCardInput {
   eventId: string | null;
   uploadedBy: Channel;
   extracted: ExtractedCard;
+  provider: string;
+  model: string;
 }
 
-function flattenAddress(address: ExtractedCard["address"]): string {
-  return [address.street, address.city, address.state, address.postal_code, address.country]
-    .filter((part) => part && part.trim().length > 0)
-    .join(", ");
+/** Every repeatable extracted field (phones/emails/addresses) is an array
+ * — this is where it becomes the single newline-joined value each DB
+ * column actually stores. Dedupes so the same value appearing on both
+ * sides of a dual-side scan doesn't produce a repeated line. */
+function joinLines(values: string[]): string | null {
+  const cleaned = Array.from(new Set(values.map((v) => v.trim()).filter((v) => v.length > 0)));
+  return cleaned.length > 0 ? cleaned.join("\n") : null;
 }
 
 async function create(input: CreateVisitingCardInput): Promise<VisitingCard> {
@@ -25,17 +30,24 @@ async function create(input: CreateVisitingCardInput): Promise<VisitingCard> {
       full_name: extracted.person_name || null,
       position: extracted.job_title || null,
       company_name: extracted.company_name || null,
-      address: flattenAddress(extracted.address) || null,
-      phone1: extracted.primary_phone || null,
-      phone2: extracted.secondary_phone || null,
-      business_email: extracted.primary_email || null,
-      personal_email: extracted.secondary_email || null,
-      website: extracted.website || null,
+      address: joinLines(extracted.addresses),
+      // phone2 is intentionally left unset here — every number found now
+      // collects into phone1 as one newline-separated value (see
+      // joinLines above). The column stays on old rows that already used
+      // it as a genuine second field; new scans just don't write it.
+      phone1: joinLines(extracted.phones),
+      business_email: joinLines(extracted.business_emails),
+      personal_email: joinLines(extracted.personal_emails),
+      website: joinLines(extracted.websites),
       linkedin: extracted.social_media.linkedin || null,
       twitter: extracted.social_media.twitter || null,
       facebook: extracted.social_media.facebook || null,
+      qr_code_content: extracted.qr_code_content || null,
+      additional_info: extracted.additional_info || null,
       uploaded_by: input.uploadedBy,
       extraction_confidence: extracted.confidence,
+      extraction_provider: input.provider,
+      extraction_model: input.model,
     })
     .select("*")
     .single();
@@ -72,23 +84,6 @@ async function setBackImageStorage(
   const { error } = await supabase
     .from("visiting_cards")
     .update({ back_storage_path: storagePath, back_image_public_url: publicUrl })
-    .eq("id", cardId);
-  if (error) throw error;
-}
-
-async function setVoiceNote(
-  cardId: string,
-  transcript: string,
-  voiceNotePath: string,
-  voiceNotePublicUrl: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from("visiting_cards")
-    .update({
-      transcribed_note: transcript,
-      voice_note_path: voiceNotePath,
-      voice_note_public_url: voiceNotePublicUrl,
-    })
     .eq("id", cardId);
   if (error) throw error;
 }
@@ -211,7 +206,8 @@ export interface CardUpdateInput {
   twitter?: string | null;
   facebook?: string | null;
   instagram?: string | null;
-  transcribed_note?: string | null;
+  qr_code_content?: string | null;
+  additional_info?: string | null;
   tags?: string[];
   archived?: boolean;
   event_id?: string | null;
@@ -281,7 +277,6 @@ export const visitingCardsRepo = {
   setMessageId,
   setImageStorage,
   setBackImageStorage,
-  setVoiceNote,
   findById,
   findByMessageId,
   listForAccount,

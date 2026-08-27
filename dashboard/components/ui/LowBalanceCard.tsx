@@ -12,15 +12,15 @@ export function LowBalanceCard({ coinBalance }: { coinBalance: number }) {
           <Coins className="size-5" strokeWidth={2} />
         </span>
         <div>
-          <p className="text-sm font-semibold text-warning-text">Your coin balance is running low</p>
+          <p className="text-sm font-semibold text-warning-text">Your credit balance is running low</p>
           <p className="text-xs text-warning-text/80">
-            Only <span className="font-semibold">{coinBalance.toLocaleString()} coins</span> left. Top up now to keep
+            Only <span className="font-semibold">{coinBalance.toLocaleString()} credits</span> left. Top up now to keep
             capturing leads without interruption.
           </p>
         </div>
       </div>
       <Link href="/subscription/topup" className="shrink-0">
-        <Button className="px-4 py-2">Top Up Coins</Button>
+        <Button className="px-4 py-2">Top Up Credits</Button>
       </Link>
     </div>
   );

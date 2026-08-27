@@ -23,7 +23,7 @@ export function UserDetailActions({ user }: { user: AdminUserDetail }) {
   return (
     <div className="flex gap-2">
       <Button variant="secondary" onClick={() => setCoinsOpen(true)}>
-        Adjust coins
+        Adjust credits
       </Button>
       <Button
         variant="secondary"

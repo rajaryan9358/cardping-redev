@@ -1,4 +1,5 @@
 import { usersRepo } from "../db/repositories/users.repo";
+import { cardInteractionsRepo } from "../db/repositories/cardInteractions.repo";
 import { Channel, ExtractedCard, UserWithEvent, VisitingCard } from "../types/domain";
 import { processCardImage, linkCardToInboundMessage } from "./cardService";
 import { chargeForCardScan } from "./coinService";
@@ -58,6 +59,7 @@ export async function finalizeScan(input: FinalizeScanInput): Promise<FinalizeSc
     usersRepo.setActiveVisitingCard(input.userId, card.id),
     chargeForCardScan(input.userId, input.accountId),
     usersRepo.setPendingMedia(input.userId, null, null),
+    cardInteractionsRepo.create(card.id, "created", { channel: input.channel }),
   ]);
 
   return { card, extracted };

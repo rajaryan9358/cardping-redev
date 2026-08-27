@@ -54,13 +54,13 @@ export default function OnboardingPage() {
         <div className="flex flex-col items-center gap-6">
           <div className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">Your Scanning Power</h1>
-            <p className="text-sm text-muted">CardPing uses a simple coin system to meter your card scans. Let&apos;s get you started.</p>
+            <p className="text-sm text-muted">CardPing uses a simple credit system to meter your card scans. Let&apos;s get you started.</p>
           </div>
 
           <div className="flex flex-col items-center gap-1 rounded-xl bg-accent-soft px-16 py-8">
             <Coins className="size-7 text-accent" strokeWidth={1.75} />
             <span className="text-4xl font-semibold text-ink">{startingCoins}</span>
-            <span className="text-xs font-semibold uppercase tracking-wider text-accent-text">Free Coins</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-accent-text">Free Credits</span>
           </div>
 
           <div className="flex w-full flex-col gap-5 rounded-xl border border-border p-5">
@@ -69,8 +69,8 @@ export default function OnboardingPage() {
                 <Zap className="size-4" strokeWidth={2} />
               </span>
               <div>
-                <h3 className="text-sm font-semibold text-ink">1 Scan = 1 Coin</h3>
-                <p className="text-xs text-muted">Every time you scan a new business card and add it to your directory, it uses one coin.</p>
+                <h3 className="text-sm font-semibold text-ink">1 Scan = 1 Credit</h3>
+                <p className="text-xs text-muted">Every time you scan a new business card and add it to your directory, it uses one credit.</p>
               </div>
             </div>
             <div className="flex gap-3">
@@ -79,7 +79,7 @@ export default function OnboardingPage() {
               </span>
               <div>
                 <h3 className="text-sm font-semibold text-ink">Your Free Trial</h3>
-                <p className="text-xs text-muted">We&apos;ve loaded your account with {startingCoins} free coins to help you experience the full power of CardPing.</p>
+                <p className="text-xs text-muted">We&apos;ve loaded your account with {startingCoins} free credits to help you experience the full power of CardPing.</p>
               </div>
             </div>
           </div>
@@ -110,7 +110,8 @@ export default function OnboardingPage() {
           <div className="flex flex-col gap-2">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">Ready to start scanning?</h1>
             <p className="text-sm text-muted">
-              Connect your preferred messaging channel to instantly receive leads when someone scans your card.
+              Your {startingCoins} free credits are waiting — connect WhatsApp or Telegram now to start scanning cards
+              with them.
             </p>
           </div>
           <div className="flex w-full flex-col gap-3">

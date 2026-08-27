@@ -1,6 +1,5 @@
 import { supabase } from "../client";
 import { Channel, User, UserState, UserWithEvent } from "../../types/domain";
-import { env } from "../../config/env";
 
 async function findByChannelId(channel: Channel, channelId: string): Promise<UserWithEvent | null> {
   const column = channel === "whatsapp" ? "wa_id" : "telegram_id";
@@ -30,7 +29,16 @@ async function createForChannel(
     .insert({
       ...insert,
       full_name: displayName,
-      coin_balance: env.COINS_STARTER_BALANCE,
+      // Not a starter grant — a channel identity can't scan anything until
+      // it's linked to an account (see whatsapp/router.ts and
+      // telegram/router.ts: "no scanning until they link"), so there's no
+      // legitimate pre-link use for a nonzero balance here. The one-time
+      // starter bonus is granted exactly once, account-wide, by
+      // onboardingService.completeOnboarding — giving a fresh identity its
+      // own full balance too just meant walletService.mergeLegacyBalanceOnLink
+      // silently granted a second (or third, per additional channel linked)
+      // copy of it on top when the channel connected.
+      coin_balance: 0,
       last_login: new Date().toISOString(),
     })
     .select("*")
@@ -89,8 +97,23 @@ async function touchLastLogin(userId: string): Promise<void> {
  * point every "set the active event" path (typed name, picked from the
  * recent-events list) goes through via eventService.ts, so event-lifetime
  * expiry (see isEventExpired) can be computed off one timestamp regardless
- * of how the event was set. */
-async function setActiveEvent(userId: string, eventId: string): Promise<void> {
+ * of how the event was set.
+ *
+ * Writes to the ACCOUNT when this channel identity is linked to one
+ * (accountId non-null) — current event is account-wide once an account
+ * exists, shared across every channel linked to it and immune to any one
+ * of them disconnecting/reconnecting (see user_with_event's coalesce).
+ * Writes to the per-channel `users` row only as the bot-only fallback,
+ * same as before this existed. */
+async function setActiveEvent(userId: string, eventId: string, accountId: string | null): Promise<void> {
+  if (accountId) {
+    const { error } = await supabase
+      .from("accounts")
+      .update({ active_event_id: eventId, active_event_set_at: new Date().toISOString() })
+      .eq("id", accountId);
+    if (error) throw error;
+    return;
+  }
   const { error } = await supabase
     .from("users")
     .update({ active_event_id: eventId, active_event_set_at: new Date().toISOString() })

@@ -27,7 +27,7 @@ export interface AdminUserDetail {
   effective_plan_expires_at: string | null;
 }
 
-export type UserStatusFilter = "active" | "blocked" | "trial" | "subscription" | "expired";
+export type UserStatusFilter = "active" | "blocked" | "trial" | "subscription" | "expired" | "needs_info";
 
 // Public (URL-facing) sort field name -> actual column. coin_balance/
 // plan_expires_at map to their effective_* counterparts so sorting
@@ -107,6 +107,7 @@ interface RawChannelLink {
   users_id: string;
   channel: "whatsapp" | "telegram";
   channel_identifier: string;
+  unlinked_at: string | null;
 }
 
 interface RawLegacyUser {
@@ -133,6 +134,8 @@ function matchesStatus(
   planExpiresAt: string | null,
   coinBalance: number,
   nowMs: number,
+  fullName: string | null,
+  email: string | null,
 ): boolean {
   switch (status) {
     case "blocked":
@@ -145,6 +148,10 @@ function matchesStatus(
       return blockedAt === null && planId !== null && !!planExpiresAt && new Date(planExpiresAt).getTime() > nowMs;
     case "expired":
       return blockedAt === null && planId !== null && !!planExpiresAt && new Date(planExpiresAt).getTime() <= nowMs;
+    // No name AND no email — near-impossible to identify or support this
+    // person; worth a dedicated filter to find them for merge/enrichment.
+    case "needs_info":
+      return !fullName && !email;
     default:
       return true;
   }
@@ -183,7 +190,7 @@ async function buildFilteredUserRows({
   const [{ data: accounts, error: accErr }, { data: links, error: linkErr }, { data: legacyUsers, error: userErr }] =
     await Promise.all([
       supabase.from("accounts").select("id, full_name, email, coin_balance, blocked_at, plan_id, plan_expires_at, created_at"),
-      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier"),
+      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier, unlinked_at"),
       supabase
         .from("users")
         .select(
@@ -194,20 +201,28 @@ async function buildFilteredUserRows({
   if (linkErr) throw linkErr;
   if (userErr) throw userErr;
 
+  // linkedUsersIds covers every users_id ever linked (active or
+  // disconnected) — a channel that's just currently disconnected must
+  // still be treated as "belongs to an account" here, or it re-appears as
+  // a second, orphaned unlinkedRows entry for the same person the moment
+  // they disconnect it (see unlinkedRows' filter below). linksByAccount
+  // is the *display* list (channel badges, wa_id/telegram_id shown on the
+  // account row) and correctly only ever shows currently-active channels.
   const linksByAccount = new Map<string, RawChannelLink[]>();
   const linkedUsersIds = new Set<string>();
   for (const link of (links ?? []) as RawChannelLink[]) {
+    linkedUsersIds.add(link.users_id);
+    if (link.unlinked_at !== null) continue;
     const arr = linksByAccount.get(link.account_id) ?? [];
     arr.push(link);
     linksByAccount.set(link.account_id, arr);
-    linkedUsersIds.add(link.users_id);
   }
 
   const term = search?.trim();
   const nowMs = Date.now();
 
   const accountRows: AdminUserListRow[] = ((accounts ?? []) as RawAccount[])
-    .filter((a) => matchesStatus(status, a.blocked_at, a.plan_id, a.plan_expires_at, a.coin_balance, nowMs))
+    .filter((a) => matchesStatus(status, a.blocked_at, a.plan_id, a.plan_expires_at, a.coin_balance, nowMs, a.full_name, a.email))
     .filter((a) => matchesExpiry(a.plan_id, a.plan_expires_at, expiresBefore, expiresAfter))
     .filter((a) => !term || matchesSearch(term, [a.email, a.full_name]))
     .map((a) => {
@@ -238,7 +253,7 @@ async function buildFilteredUserRows({
 
   const unlinkedRows: AdminUserListRow[] = ((legacyUsers ?? []) as RawLegacyUser[])
     .filter((u) => !linkedUsersIds.has(u.id))
-    .filter((u) => matchesStatus(status, u.blocked_at, u.plan_id, u.plan_expires_at, u.coin_balance, nowMs))
+    .filter((u) => matchesStatus(status, u.blocked_at, u.plan_id, u.plan_expires_at, u.coin_balance, nowMs, u.full_name, u.email))
     .filter((u) => matchesExpiry(u.plan_id, u.plan_expires_at, expiresBefore, expiresAfter))
     .filter((u) => !term || matchesSearch(term, [u.email, u.full_name, u.wa_id, u.telegram_id]))
     .map((u) => ({

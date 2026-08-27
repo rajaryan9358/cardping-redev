@@ -25,21 +25,21 @@ export interface DashboardEventRow {
   id: string;
   name: string;
   location: string | null;
+  lat: number | null;
+  lng: number | null;
   event_date: string | null;
   thumbnail_public_url: string | null;
   created_at: string;
   status: "active" | "inactive";
 }
 
-const DASHBOARD_EVENT_COLUMNS = "id, name, location, event_date, thumbnail_public_url, created_at, status";
+const DASHBOARD_EVENT_COLUMNS = "id, name, location, lat, lng, event_date, thumbnail_public_url, created_at, status";
 
-async function listForAccount(usersIds: string[]): Promise<DashboardEventRow[]> {
+async function listForAccount(usersIds: string[], query?: string): Promise<DashboardEventRow[]> {
   if (usersIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from("events")
-    .select(DASHBOARD_EVENT_COLUMNS)
-    .in("user_id", usersIds)
-    .order("created_at", { ascending: false });
+  let q = supabase.from("events").select(DASHBOARD_EVENT_COLUMNS).in("user_id", usersIds);
+  if (query) q = q.ilike("name", `%${query}%`);
+  const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as DashboardEventRow[];
 }
@@ -76,6 +76,8 @@ async function findByIdForAccount(eventId: string, usersIds: string[]): Promise<
 export interface EventUpdateInput {
   name?: string;
   location?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   event_date?: string | null;
   thumbnail_path?: string | null;
   thumbnail_public_url?: string | null;
@@ -111,6 +113,15 @@ async function updateForAccount(eventId: string, usersIds: string[], patch: Even
   return data as DashboardEventRow | null;
 }
 
+async function countEventsSince(usersIds: string[], sinceIso: string, untilIso?: string): Promise<number> {
+  if (usersIds.length === 0) return 0;
+  let query = supabase.from("events").select("id", { count: "exact", head: true }).in("user_id", usersIds).gte("created_at", sinceIso);
+  if (untilIso) query = query.lt("created_at", untilIso);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
 async function countCardsForEvent(eventId: string, usersIds: string[]): Promise<number> {
   if (usersIds.length === 0) return 0;
   const { count, error } = await supabase
@@ -131,4 +142,5 @@ export const eventsRepo = {
   createForUsersId,
   updateForAccount,
   countCardsForEvent,
+  countEventsSince,
 };

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { ScansExplorer } from "@/components/scans/ScansExplorer";
 import { allTags, getCards } from "@/lib/data/cards";
-import { getEvent, getEvents } from "@/lib/data/events";
+import { getEvent, getEvents, isEventUpcoming } from "@/lib/data/events";
+import { EventMap } from "@/components/events/EventMap";
 
 // This frame's own Figma draft drew a different sidebar — deliberately
 // not reproduced; this page uses the canonical AppShell like every other
@@ -23,8 +24,13 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
             <span>Conference</span>
-            <Badge tone={event.status === "active" ? "success" : "pending"}>{event.status}</Badge>
-            {event.activeStatus === "inactive" && <Badge tone="pending">Inactive</Badge>}
+            {event.activeStatus === "inactive" ? (
+              <Badge tone="pending">Inactive</Badge>
+            ) : isEventUpcoming(event) ? (
+              <Badge tone="accent">Upcoming</Badge>
+            ) : (
+              <Badge tone="success">Active</Badge>
+            )}
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{event.name}</h1>
           <p className="flex items-center gap-1.5 text-sm text-muted">
@@ -47,9 +53,7 @@ export default async function EventDetailPage({ params }: { params: { eventId: s
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatCard label="Total Leads" value={leads.length} icon={Users} />
-        <div className="flex min-h-24 items-center justify-center rounded-xl border border-border bg-accent-soft text-sm text-accent-text sm:col-span-2">
-          Map preview
-        </div>
+        <EventMap lat={event.lat} lng={event.lng} label={event.location ?? event.name} />
       </div>
 
       <h2 className="text-lg font-semibold text-ink">Event Leads</h2>

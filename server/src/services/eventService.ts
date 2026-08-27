@@ -11,17 +11,17 @@ export function isEventExpired(user: UserWithEvent): boolean {
   return Date.now() > expiresAt;
 }
 
-export async function setActiveEvent(userId: string, name: string): Promise<EventRow> {
+export async function setActiveEvent(userId: string, name: string, accountId: string | null): Promise<EventRow> {
   const event = await eventsRepo.create(userId, name);
-  await usersRepo.setActiveEvent(userId, event.id);
+  await usersRepo.setActiveEvent(userId, event.id, accountId);
   return event;
 }
 
 /** Reuses an existing event (picked from the recent-events list) instead of
  * creating a new one — see scanFlowService.ts's event picker. Returns the
  * event's name for the "Switched to X" confirmation. */
-export async function setActiveEventById(userId: string, eventId: string): Promise<string> {
-  await usersRepo.setActiveEvent(userId, eventId);
+export async function setActiveEventById(userId: string, eventId: string, accountId: string | null): Promise<string> {
+  await usersRepo.setActiveEvent(userId, eventId, accountId);
   const event = await eventsRepo.findById(eventId);
   return event?.name ?? "that event";
 }

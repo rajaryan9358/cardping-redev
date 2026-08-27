@@ -15,6 +15,23 @@ const settingsSchema = z.object({
   eventLifetimeHours: z.number().int().positive().nullable().optional(),
 });
 
+const profileSchema = z.object({
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+});
+
+/** Personal info — deliberately excludes email: it's the account's login
+ * identity, so it's read-only from this form (the dashboard field is
+ * disabled to match, but the rule is enforced here too, not just by
+ * disabling the input). */
+accountRouter.patch("/account/profile", requireSession, async (req, res) => {
+  const body = parseBody(profileSchema, req, res);
+  if (!body) return;
+
+  const updated = await accountsRepo.update(req.account!.id, { full_name: `${body.firstName} ${body.lastName}`.trim() });
+  res.json({ account: sanitizeAccount(updated) });
+});
+
 /** Scan/event preferences — edited from both here and the bot's Account
  * Settings menu (see scanFlowService.ts), same accounts columns either
  * way. */

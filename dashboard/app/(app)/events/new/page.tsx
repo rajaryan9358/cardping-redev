@@ -4,6 +4,7 @@ import { Upload } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LocationAutocompleteInput } from "@/components/events/LocationAutocompleteInput";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -26,13 +27,15 @@ export default function NewEventPage() {
     const form = new FormData(e.currentTarget);
     const name = form.get("name") as string;
     const location = (form.get("location") as string) || null;
+    const lat = form.get("lat") ? Number(form.get("lat")) : null;
+    const lng = form.get("lng") ? Number(form.get("lng")) : null;
     const eventDate = (form.get("eventDate") as string) || null;
 
     setSubmitting(true);
     try {
       const res = await clientFetch("/api/events", {
         method: "POST",
-        body: JSON.stringify({ name, location, eventDate }),
+        body: JSON.stringify({ name, location, lat, lng, eventDate }),
       });
       const { event } = await parseJsonOrThrow<{ event: { id: string } }>(res);
 
@@ -94,11 +97,7 @@ export default function NewEventPage() {
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted">Location / Venue</label>
-            <input
-              name="location"
-              placeholder="e.g., Moscone Center"
-              className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
+            <LocationAutocompleteInput />
           </div>
         </div>
 

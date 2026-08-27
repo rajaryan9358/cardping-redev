@@ -2,9 +2,12 @@
 
 import { Coins, Menu } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { AvatarMenu } from "./AvatarMenu";
+import { GlobalSearch } from "./GlobalSearch";
 import { useMobileNav } from "./MobileNavContext";
 import { Notification, NotificationsMenu } from "./NotificationsMenu";
+import { pageTitle } from "@/lib/pageTitle";
 
 interface TopBarProps {
   coinBalance: number;
@@ -16,12 +19,15 @@ interface TopBarProps {
 
 export function TopBar({ coinBalance, avatarUrl, accountName, accountEmail, notifications }: TopBarProps) {
   const { toggle } = useMobileNav();
+  const pathname = usePathname();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-surface px-4 sm:px-6 md:left-64 md:justify-end md:px-8">
+    <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-border bg-surface px-4 sm:px-6 md:left-64 md:px-8">
       <button type="button" aria-label="Open menu" onClick={toggle} className="text-muted-2 md:hidden">
         <Menu className="size-6" strokeWidth={2} />
       </button>
+      <h1 className="hidden truncate text-base font-semibold text-ink md:block">{pageTitle(pathname)}</h1>
+      <GlobalSearch />
       <div className="flex items-center gap-2">
         <Link
           href="/subscription"

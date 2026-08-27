@@ -5,8 +5,10 @@ import { Badge } from "../../../components/ui/Badge";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { BroadcastComposer } from "./BroadcastComposer";
 import { CampaignActions } from "./CampaignActions";
+import { BroadcastsPagination } from "./BroadcastsPagination";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 10;
 
 const STATUS_TONE = {
   draft: "pending",
@@ -15,8 +17,14 @@ const STATUS_TONE = {
   failed: "danger",
 } as const;
 
-export default async function BroadcastsPage() {
-  const { rows: campaigns, total } = await adminBroadcastsRepo.listCampaigns(1, PAGE_SIZE);
+export default async function BroadcastsPage({
+  searchParams,
+}: {
+  searchParams: { page?: string; pageSize?: string };
+}) {
+  const page = Math.max(1, Number(searchParams.page) || 1);
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.pageSize)) ? Number(searchParams.pageSize) : DEFAULT_PAGE_SIZE;
+  const { rows: campaigns, total } = await adminBroadcastsRepo.listCampaigns(page, pageSize);
   const counts = await Promise.all(campaigns.map((c) => adminBroadcastsRepo.getRecipientCounts(c.id)));
 
   return (
@@ -72,6 +80,7 @@ export default async function BroadcastsPage() {
               </Td>
             </Tr>
           ))}
+          <BroadcastsPagination page={page} pageSize={pageSize} totalItems={total} />
         </TableCard>
       </section>
     </div>

@@ -5,8 +5,11 @@ import {
   ArrowUp,
   ArrowUpDown,
   Download,
+  Globe,
+  Mail,
   MoreVertical,
   Pencil,
+  Phone,
   Search,
   Tag as TagIcon,
   Trash2,
@@ -14,8 +17,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { ChannelIcon, channelLabel } from "@/components/ui/ChannelIcon";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { TableCard, TableHeaderRow, Th, Td, Tr } from "@/components/ui/Table";
@@ -27,11 +31,6 @@ import { cn } from "@/lib/cn";
 import { EventRecord, VisitingCard } from "@/lib/types";
 import { clientFetch } from "@/lib/clientFetch";
 
-const CHANNEL_ICON: Record<VisitingCard["uploadedBy"], string> = {
-  whatsapp: "/icons/channel-whatsapp.svg",
-  telegram: "/icons/channel-telegram.svg",
-};
-
 type SortKey = "fullName" | "companyName" | "scannedAt";
 
 function initials(name: string): string {
@@ -40,6 +39,58 @@ function initials(name: string): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+type AvailabilityKey = "whatsapp" | "email" | "phone" | "website";
+
+const AVAILABILITY_OPTIONS: { value: AvailabilityKey; label: string }[] = [
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "website", label: "Website" },
+];
+
+function hasAvailability(card: VisitingCard, key: AvailabilityKey): boolean {
+  if (key === "whatsapp" || key === "phone") return !!card.phone1;
+  if (key === "email") return !!(card.businessEmail || card.personalEmail);
+  return !!card.website;
+}
+
+/** At-a-glance contact-method availability — one small icon per field the
+ * card actually has. whatsapp and phone both key off card.phone1 (there's
+ * no separate "this number is WhatsApp" field on a scanned card) but get
+ * their own icon since they represent different actions (chat vs. call). */
+function AvailabilityIcons({ card }: { card: VisitingCard }) {
+  const hasPhone = hasAvailability(card, "phone");
+  const hasEmail = hasAvailability(card, "email");
+  const hasWebsite = hasAvailability(card, "website");
+
+  if (!hasPhone && !hasEmail && !hasWebsite) return <span className="text-muted">—</span>;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {hasPhone && (
+        <span title="WhatsApp available">
+          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={14} height={14} />
+        </span>
+      )}
+      {hasPhone && (
+        <span title="Phone available">
+          <Phone className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+      {hasEmail && (
+        <span title="Email available">
+          <Mail className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+      {hasWebsite && (
+        <span title="Website available">
+          <Globe className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+    </div>
+  );
 }
 
 function exportCsv(cards: VisitingCard[]) {
@@ -52,7 +103,7 @@ function exportCsv(cards: VisitingCard[]) {
     c.phone1 ?? "",
     c.eventName,
     c.tags.join("; "),
-    c.uploadedBy,
+    channelLabel(c.uploadedBy),
     formatDate(c.scannedAt),
   ]);
   const csv = [headers, ...rows].map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -75,6 +126,53 @@ interface ScansExplorerProps {
   pageSize?: number;
   limit?: number;
   initialQuery?: string;
+  // Only the full Directory page passes this — it opts this instance into
+  // remembering its filters/sort/page/pageSize (sessionStorage, keyed by
+  // this string) across a visit to a card's detail page and back. The
+  // Home page's mini widget and an event's embedded leads table don't
+  // pass it, so they never read/write shared state and can't stomp each
+  // other or the real Directory page's.
+  persistKey?: string;
+}
+
+interface PersistedExplorerState {
+  query: string;
+  eventFilter: string[];
+  tagFilter: string[];
+  availabilityFilter: AvailabilityKey[];
+  dateFrom: string;
+  dateTo: string;
+  showArchived: boolean;
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  page: number;
+  pageSize: number;
+  scrollY: number;
+}
+
+// Applied via an effect (not a useState lazy initializer) — sessionStorage
+// doesn't exist during SSR, so reading it during the first render would
+// make that render disagree with the server-rendered HTML and trigger a
+// hydration mismatch. An effect only runs client-side, after hydration
+// already matched, so this is a deliberate second pass: render with
+// plain defaults first, then (if there's saved state) immediately apply
+// it and re-render.
+function loadPersistedState(persistKey: string): PersistedExplorerState | null {
+  try {
+    const raw = sessionStorage.getItem(`scansExplorer:${persistKey}`);
+    return raw ? (JSON.parse(raw) as PersistedExplorerState) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(persistKey: string, state: PersistedExplorerState): void {
+  try {
+    sessionStorage.setItem(`scansExplorer:${persistKey}`, JSON.stringify(state));
+  } catch {
+    // sessionStorage can throw (private browsing, storage disabled) —
+    // losing this is a UX nicety, not a correctness requirement.
+  }
 }
 
 export function ScansExplorer({
@@ -84,9 +182,10 @@ export function ScansExplorer({
   showEventFilter = true,
   showToolbar = true,
   showPagination = true,
-  pageSize = 8,
+  pageSize: initialPageSize = 8,
   limit,
   initialQuery = "",
+  persistKey,
 }: ScansExplorerProps) {
   const [cards, setCards] = useState(initialCards);
   const [query, setQuery] = useState(initialQuery);
@@ -97,6 +196,7 @@ export function ScansExplorer({
   const activeEvents = events.filter((e) => e.activeStatus !== "inactive");
   const [eventFilter, setEventFilter] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityKey[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -104,7 +204,96 @@ export function ScansExplorer({
   const [sortKey, setSortKey] = useState<SortKey>("scannedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+  // Set right before the restore effect below applies a saved page number
+  // — otherwise the "reset to page 1 on filter change" effect would fire
+  // on the very same restoration and immediately clobber it, since from
+  // its point of view eventFilter/tagFilter/etc. just "changed".
+  const skipNextPageResetRef = useRef(false);
+
+  // Second render pass (see loadPersistedState's comment) — restores
+  // filters/sort/page/pageSize/scroll from the last visit to this exact
+  // instance (only the full Directory page passes persistKey), so
+  // clicking into a card's detail page and back doesn't reset everything.
+  useEffect(() => {
+    if (!persistKey) return;
+    const saved = loadPersistedState(persistKey);
+    if (saved) {
+      skipNextPageResetRef.current = true;
+      setQuery(saved.query);
+      setEventFilter(saved.eventFilter);
+      setTagFilter(saved.tagFilter);
+      setAvailabilityFilter(saved.availabilityFilter);
+      setDateFrom(saved.dateFrom);
+      setDateTo(saved.dateTo);
+      setShowArchived(saved.showArchived);
+      setSortKey(saved.sortKey);
+      setSortDir(saved.sortDir);
+      setPage(saved.page);
+      setPageSize(saved.pageSize);
+      window.scrollTo(0, saved.scrollY);
+    }
+    setRestored(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persists on every relevant change, once the initial restore pass has
+  // happened — otherwise this would immediately overwrite the saved state
+  // with the pre-restore defaults before the restore effect above runs.
+  useEffect(() => {
+    if (!persistKey || !restored) return;
+    savePersistedState(persistKey, {
+      query,
+      eventFilter,
+      tagFilter,
+      availabilityFilter,
+      dateFrom,
+      dateTo,
+      showArchived,
+      sortKey,
+      sortDir,
+      page,
+      pageSize,
+      scrollY: window.scrollY,
+    });
+  }, [persistKey, restored, query, eventFilter, tagFilter, availabilityFilter, dateFrom, dateTo, showArchived, sortKey, sortDir, page, pageSize]);
+
+  // A filter/sort/page-size change can leave `page` pointing past the end
+  // of a now-narrower result set — always land back on page 1. Skipped
+  // once, right after a restore, so it doesn't undo the restored page.
+  useEffect(() => {
+    if (skipNextPageResetRef.current) {
+      skipNextPageResetRef.current = false;
+      return;
+    }
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventFilter, tagFilter, availabilityFilter, dateFrom, dateTo, query, showArchived, sortKey, sortDir, pageSize]);
+
+  // The persist effect above only re-saves when a filter/sort/page value
+  // actually changes — plain scrolling doesn't touch any of those, so
+  // without this, clicking a card after scrolling down (without ever
+  // changing a filter) would restore to a stale scroll position. Called
+  // right before navigating to a card's detail page.
+  function saveScrollNow() {
+    if (!persistKey) return;
+    savePersistedState(persistKey, {
+      query,
+      eventFilter,
+      tagFilter,
+      availabilityFilter,
+      dateFrom,
+      dateTo,
+      showArchived,
+      sortKey,
+      sortDir,
+      page,
+      pageSize,
+      scrollY: window.scrollY,
+    });
+  }
 
   const [deleteTarget, setDeleteTarget] = useState<VisitingCard | "bulk" | null>(null);
   const [tagModalOpen, setTagModalOpen] = useState(false);
@@ -117,6 +306,7 @@ export function ScansExplorer({
       if (card.archived !== showArchived) return false;
       if (eventFilter.length && !eventFilter.includes(card.eventId)) return false;
       if (tagFilter.length && !tagFilter.some((tag) => card.tags.includes(tag))) return false;
+      if (availabilityFilter.length && !availabilityFilter.every((key) => hasAvailability(card, key))) return false;
       if (dateFrom && card.scannedAt < dateFrom) return false;
       if (dateTo && card.scannedAt > `${dateTo}T23:59:59`) return false;
       if (query) {
@@ -134,7 +324,7 @@ export function ScansExplorer({
     });
 
     return result;
-  }, [cards, eventFilter, tagFilter, dateFrom, dateTo, query, showArchived, sortKey, sortDir]);
+  }, [cards, eventFilter, tagFilter, availabilityFilter, dateFrom, dateTo, query, showArchived, sortKey, sortDir]);
 
   const visible = limit ? filtered.slice(0, limit) : filtered;
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
@@ -262,6 +452,13 @@ async function confirmDelete() {
                 onChange={setTagFilter}
                 className="w-44"
               />
+              <MultiSelectDropdown
+                label="Has"
+                options={AVAILABILITY_OPTIONS}
+                selected={availabilityFilter}
+                onChange={(values) => setAvailabilityFilter(values as AvailabilityKey[])}
+                className="w-44"
+              />
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none" />
               <span className="text-xs text-muted">to</span>
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none" />
@@ -295,6 +492,7 @@ async function confirmDelete() {
           <Th>Job Title</Th>
           <Th>Event</Th>
           <Th className="flex-[1.4]">Tags</Th>
+          <Th>Availability</Th>
           <Th align="center">Channel</Th>
           <Th align="right">
             <button type="button" onClick={() => handleSort("scannedAt")} className="ml-auto flex items-center gap-1 hover:text-ink">
@@ -310,7 +508,7 @@ async function confirmDelete() {
               <input type="checkbox" checked={selected.has(card.id)} onChange={() => toggle(card.id)} className="size-4 rounded border-border text-accent" />
             </div>
             <Td className="flex-[1.4]">
-              <Link href={`/directory/${card.id}`} className="flex items-center gap-3 hover:underline">
+              <Link href={`/directory/${card.id}`} onClick={saveScrollNow} className="flex items-center gap-3 hover:underline">
                 <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">
                   {initials(card.fullName)}
                 </span>
@@ -329,8 +527,13 @@ async function confirmDelete() {
                 ))}
               </div>
             </Td>
+            <Td>
+              <AvailabilityIcons card={card} />
+            </Td>
             <Td align="center">
-              <Image src={CHANNEL_ICON[card.uploadedBy]} alt={card.uploadedBy} width={26} height={26} className="mx-auto" />
+              <div className="mx-auto flex w-fit items-center justify-center">
+                <ChannelIcon channel={card.uploadedBy} />
+              </div>
             </Td>
             <Td align="right">{formatDate(card.scannedAt)}</Td>
             <div className="relative flex w-10 items-center justify-center text-muted">
@@ -367,7 +570,16 @@ async function confirmDelete() {
           </div>
         )}
 
-        {showPagination && paged.length > 0 && <Pagination page={page} pageCount={pageCount} totalItems={visible.length} pageSize={pageSize} onPageChange={setPage} />}
+        {showPagination && paged.length > 0 && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            totalItems={visible.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </TableCard>
 
       <ConfirmDialog

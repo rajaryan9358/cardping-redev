@@ -4,17 +4,23 @@ import { LogOut } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Pagination } from "@/components/ui/Pagination";
 import { TableCard, TableHeaderRow, Th, Td, Tr } from "@/components/ui/Table";
 import { Session } from "@/lib/types";
 import { clientFetch } from "@/lib/clientFetch";
 import { performLogout } from "@/lib/logout";
 
 type PendingLogout = Session | "all" | null;
+const DEFAULT_PAGE_SIZE = 10;
 
 export function SessionsClient({ sessions: initialSessions }: { sessions: Session[] }) {
   const [sessions, setSessions] = useState(initialSessions);
   const [pendingLogout, setPendingLogout] = useState<PendingLogout>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(sessions.length / pageSize));
+  const paged = sessions.slice((page - 1) * pageSize, page * pageSize);
 
   async function confirmLogout() {
     setSubmitting(true);
@@ -38,7 +44,7 @@ export function SessionsClient({ sessions: initialSessions }: { sessions: Sessio
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
       <div className="flex items-center justify-between pb-4">
-        <h2 className="text-base font-semibold text-ink">Login History</h2>
+        <h2 className="text-base font-semibold text-ink">Signed-in Devices</h2>
         <button
           type="button"
           onClick={() => setPendingLogout("all")}
@@ -54,7 +60,7 @@ export function SessionsClient({ sessions: initialSessions }: { sessions: Sessio
           <Th>Date</Th>
           <Th align="right">Action</Th>
         </TableHeaderRow>
-        {sessions.map((session) => (
+        {paged.map((session) => (
           <Tr key={session.id}>
             <Td className="flex-[1.4]">
               <span className="flex items-center gap-2">
@@ -63,7 +69,15 @@ export function SessionsClient({ sessions: initialSessions }: { sessions: Sessio
               </span>
             </Td>
             <Td>{session.location ?? "—"}</Td>
-            <Td>{new Date(session.lastActiveAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</Td>
+            <Td>
+              {new Date(session.lastActiveAt).toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </Td>
             <Td align="right">
               {!session.isCurrent && (
                 <button type="button" onClick={() => setPendingLogout(session)} className="text-xs font-semibold text-danger-text">
@@ -73,6 +87,18 @@ export function SessionsClient({ sessions: initialSessions }: { sessions: Sessio
             </Td>
           </Tr>
         ))}
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          totalItems={sessions.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          pageSizeOptions={[10, 20, 50]}
+        />
       </TableCard>
 
       <ConfirmDialog

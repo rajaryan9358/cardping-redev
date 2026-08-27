@@ -38,7 +38,7 @@ export function TopUpsManager({ topUps }: { topUps: TopUpCatalogRow[] }) {
       <TableCard>
         <TableHeaderRow>
           <Th>Package</Th>
-          <Th align="right">Coins</Th>
+          <Th align="right">Credits</Th>
           <Th align="right">Price</Th>
           <Th>Popular</Th>
           <Th>Status</Th>
@@ -48,7 +48,7 @@ export function TopUpsManager({ topUps }: { topUps: TopUpCatalogRow[] }) {
         {topUps.map((topUp) => (
           <Tr key={topUp.id}>
             <Td>
-              <div className="font-medium text-ink">{topUp.coins} coins</div>
+              <div className="font-medium text-ink">{topUp.coins} credits</div>
               {topUp.description && <div className="text-xs text-muted">{topUp.description}</div>}
             </Td>
             <Td align="right">{topUp.coins}</Td>

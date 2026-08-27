@@ -16,6 +16,7 @@ interface ServerAccount {
   coin_balance: number;
   plan_id: string | null;
   plan_expires_at: string | null;
+  plan_billing_period: "monthly" | "annual" | null;
   has_password: boolean;
   scan_both_sides: boolean;
   event_lifetime_hours: number | null;
@@ -47,6 +48,7 @@ function mapAccount(a: ServerAccount, marketingOptIn: boolean): Account {
     coinBalance: a.coin_balance,
     planId: a.plan_id,
     planExpiresAt: a.plan_expires_at,
+    planBillingPeriod: a.plan_billing_period,
     scanBothSides: a.scan_both_sides,
     eventLifetimeHours: a.event_lifetime_hours,
     marketingOptIn,
@@ -84,6 +86,7 @@ export async function getSessions(): Promise<Session[]> {
       last_seen_at: string;
       isCurrent: boolean;
       source: "login" | "magic_login";
+      location: string | null;
     }[];
   };
   // A bot-issued magic-login tap (Buy Credits/Subscribe) creates a real
@@ -95,7 +98,7 @@ export async function getSessions(): Promise<Session[]> {
     .map((s) => ({
       id: s.id,
       deviceLabel: s.device_label ?? "Unknown device",
-      location: null,
+      location: s.location,
       lastActiveAt: s.last_seen_at,
       isCurrent: s.isCurrent,
     }));

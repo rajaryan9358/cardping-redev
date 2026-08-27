@@ -113,6 +113,7 @@ export interface Account {
   coin_balance: number;
   plan_id: string | null;
   plan_expires_at: string | null;
+  plan_billing_period: "monthly" | "annual" | null;
   scan_both_sides: boolean;
   event_lifetime_hours: number | null;
   created_at: string;
@@ -128,6 +129,7 @@ export interface ChannelLink {
   channel: ChannelLinkChannel;
   channel_identifier: string;
   verified_at: string | null;
+  unlinked_at: string | null;
   created_at: string;
 }
 
@@ -155,6 +157,8 @@ export interface VisitingCard {
   twitter: string | null;
   facebook: string | null;
   instagram: string | null;
+  qr_code_content: string | null;
+  additional_info: string | null;
   image_url: string | null;
   uploaded_by: Channel | null;
   message_id: string | null;
@@ -167,6 +171,8 @@ export interface VisitingCard {
   image_public_url: string | null;
   voice_note_public_url: string | null;
   extraction_confidence: number | null;
+  extraction_provider: string | null;
+  extraction_model: string | null;
   back_storage_path: string | null;
   back_image_public_url: string | null;
 }
@@ -187,36 +193,35 @@ export interface Transaction {
   coins: number;
   amount_inr: number | null;
   plan_id: string | null;
+  billing_period: "monthly" | "annual" | null;
   status: "pending" | "completed" | "failed";
   cashfree_link_id: string | null;
   stripe_id: string | null;
   created_at: string;
 }
 
-/** Structured fields the vision model extracts from a business-card photo. */
+/** Structured fields the vision model extracts from a business-card photo.
+ * Repeatable fields (phones/emails/addresses) are arrays — a card can
+ * genuinely have more than one of each, and cardService.ts flattens each
+ * array into one newline-joined value per DB column rather than the
+ * model being asked to pick just one. */
 export interface ExtractedCard {
   person_name: string;
   company_name: string;
   job_title: string;
-  primary_email: string;
-  secondary_email: string;
-  primary_phone: string;
-  secondary_phone: string;
-  mobile_phone: string;
+  business_emails: string[];
+  personal_emails: string[];
+  phones: string[];
   fax: string;
-  website: string;
-  address: {
-    street: string;
-    city: string;
-    state: string;
-    postal_code: string;
-    country: string;
-  };
+  websites: string[];
+  addresses: string[];
   social_media: {
     linkedin: string;
     twitter: string;
     facebook: string;
   };
+  qr_code_content: string;
+  additional_info: string;
   confidence: number;
   notes: string;
 }

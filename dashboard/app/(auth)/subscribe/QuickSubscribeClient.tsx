@@ -44,7 +44,7 @@ export function QuickSubscribeClient({ account, plans }: { account: Account; pla
           <Sparkles className="size-6" strokeWidth={2} />
         </span>
         <h1 className="text-xl font-semibold text-ink">Subscribe to a Plan</h1>
-        <p className="text-sm text-muted">Recurring coins every billing cycle instead of one-off top-ups.</p>
+        <p className="text-sm text-muted">Recurring credits every billing cycle instead of one-off top-ups.</p>
       </div>
 
       {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
@@ -64,7 +64,7 @@ export function QuickSubscribeClient({ account, plans }: { account: Account; pla
                 {plan.isCurrent && <Check className="size-3.5 text-success-text" strokeWidth={2} />}
               </p>
               <p className="text-xs text-muted">
-                ₹{plan.priceInr} / {plan.periodDays} days · {plan.coinsIncluded} coins
+                ₹{plan.priceInr} / {plan.periodDays} days · {plan.coinsIncluded} credits
               </p>
             </div>
             <span className="text-xs font-medium text-accent">
@@ -75,7 +75,7 @@ export function QuickSubscribeClient({ account, plans }: { account: Account; pla
       </div>
 
       <p className="text-center text-xs text-muted">
-        You have {account.coinBalance} coins available right now regardless of plan.
+        You have {account.coinBalance} credits available right now regardless of plan.
       </p>
     </div>
   );

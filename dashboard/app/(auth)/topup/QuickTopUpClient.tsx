@@ -45,7 +45,7 @@ export function QuickTopUpClient({ account, topUps }: { account: Account; topUps
           <Coins className="size-6" strokeWidth={2} />
         </span>
         <h1 className="text-xl font-semibold text-ink">Buy Credits</h1>
-        <p className="text-sm text-muted">You have {account.coinBalance} coins. Pick a top-up to add more.</p>
+        <p className="text-sm text-muted">You have {account.coinBalance} credits. Pick a top-up to add more.</p>
       </div>
 
       {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
@@ -60,7 +60,7 @@ export function QuickTopUpClient({ account, topUps }: { account: Account; topUps
             className="flex items-center justify-between rounded-xl border border-border bg-surface p-4 text-left shadow-soft transition-colors hover:border-accent disabled:opacity-50"
           >
             <div>
-              <p className="text-sm font-semibold text-ink">{pkg.coins} coins</p>
+              <p className="text-sm font-semibold text-ink">{pkg.coins} credits</p>
               <p className="text-xs text-muted">₹{pkg.priceInr}</p>
             </div>
             <span className="text-xs font-medium text-accent">{selectedId === pkg.id ? "Redirecting…" : "Buy"}</span>

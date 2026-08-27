@@ -8,6 +8,8 @@ interface ServerEvent {
   id: string;
   name: string;
   location: string | null;
+  lat: number | null;
+  lng: number | null;
   event_date: string | null;
   thumbnail_public_url: string | null;
   created_at: string;
@@ -15,37 +17,30 @@ interface ServerEvent {
   status: "active" | "inactive";
 }
 
-// Every real card requires an event to already be set before the bot
-// accepts a scan (see server/src/bots/*/handlers/{image,photo}.ts), so
-// there's no genuine "uncategorized" bucket the way the original mock
-// data modeled with a synthetic "Miscellaneous" event — every event here
-// is a real one the user named.
-function deriveStatus(eventDate: string | null): EventRecord["status"] {
-  if (!eventDate) return "draft";
-  const date = new Date(eventDate);
-  const now = new Date();
-  const daysSince = (now.getTime() - date.getTime()) / 86_400_000;
-  if (daysSince < 0) return "upcoming";
-  if (daysSince <= 3) return "active";
-  return "past";
-}
-
 function mapEvent(e: ServerEvent): EventRecord {
   return {
     id: e.id,
     name: e.name,
     location: e.location,
+    lat: e.lat,
+    lng: e.lng,
     eventDate: e.event_date,
     thumbnailUrl: e.thumbnail_public_url,
     leadCount: e.leadCount,
     isMiscellaneous: false,
-    status: deriveStatus(e.event_date),
     activeStatus: e.status,
   };
 }
 
-export async function getEvents(): Promise<EventRecord[]> {
-  const res = await serverFetch("/api/events");
+/** "Upcoming" isn't a stored status — it's an active event whose date
+ * hasn't arrived yet. Used for display badges/filters only. */
+export function isEventUpcoming(event: Pick<EventRecord, "activeStatus" | "eventDate">): boolean {
+  return event.activeStatus === "active" && !!event.eventDate && new Date(event.eventDate) > new Date();
+}
+
+export async function getEvents(query?: string): Promise<EventRecord[]> {
+  const params = query ? `?q=${encodeURIComponent(query)}` : "";
+  const res = await serverFetch(`/api/events${params}`);
   redirectIfPaywalled(res);
   if (!res.ok) return [];
   const { events } = (await res.json()) as { events: ServerEvent[] };

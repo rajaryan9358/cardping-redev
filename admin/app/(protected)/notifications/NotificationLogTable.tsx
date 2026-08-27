@@ -9,6 +9,19 @@ import { formatDateTime } from "../../../lib/format";
 
 const STATUS_TONE = { sent: "success", failed: "danger", pending: "pending" } as const;
 
+// Send failures get thrown (and persisted) as one flattened string, e.g.
+// `WhatsApp send failed (404): {"error":{"message":"..."}}` — this pulls
+// out a short human summary for the visible cell; the raw string stays
+// available as a hover tooltip instead of a truncated JSON blob.
+const SEND_FAILURE_PATTERN = /^(\w+) send failed \((\d+)\):/;
+
+function formatNotificationError(raw: string | null): { summary: string; title?: string } {
+  if (!raw) return { summary: "—" };
+  const match = raw.match(SEND_FAILURE_PATTERN);
+  if (match) return { summary: `${match[1]} delivery failed — HTTP ${match[2]}`, title: raw };
+  return { summary: raw, title: raw };
+}
+
 export function NotificationLogTable({
   rows,
   total,
@@ -27,7 +40,7 @@ export function NotificationLogTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  function navigate(next: { page?: number; type?: string; triggeredBy?: string }) {
+  function navigate(next: { page?: number; pageSize?: number; type?: string; triggeredBy?: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.type !== undefined) {
       next.type ? params.set("type", next.type) : params.delete("type");
@@ -35,6 +48,10 @@ export function NotificationLogTable({
     }
     if (next.triggeredBy !== undefined) {
       next.triggeredBy ? params.set("triggeredBy", next.triggeredBy) : params.delete("triggeredBy");
+      params.set("page", "1");
+    }
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
       params.set("page", "1");
     }
     if (next.page !== undefined) params.set("page", String(next.page));
@@ -87,7 +104,9 @@ export function NotificationLogTable({
             <Td>
               <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
             </Td>
-            <Td className="max-w-xs truncate text-xs">{row.error || "—"}</Td>
+            <Td className="max-w-xs truncate text-xs">
+              <span title={formatNotificationError(row.error).title}>{formatNotificationError(row.error).summary}</span>
+            </Td>
           </Tr>
         ))}
         <Pagination
@@ -96,6 +115,7 @@ export function NotificationLogTable({
           totalItems={total}
           pageSize={pageSize}
           onPageChange={(p) => navigate({ page: p })}
+          onPageSizeChange={(size) => navigate({ pageSize: size })}
         />
       </TableCard>
     </div>

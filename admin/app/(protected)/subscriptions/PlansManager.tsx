@@ -38,9 +38,10 @@ export function PlansManager({ plans }: { plans: PlanCatalogRow[] }) {
       <TableCard>
         <TableHeaderRow>
           <Th>Plan</Th>
-          <Th align="right">Price</Th>
+          <Th align="right">Monthly</Th>
+          <Th align="right">Annual</Th>
           <Th align="right">Period</Th>
-          <Th align="right">Coins</Th>
+          <Th align="right">Credits</Th>
           <Th>Status</Th>
           <Th align="right">Actions</Th>
         </TableHeaderRow>
@@ -52,6 +53,7 @@ export function PlansManager({ plans }: { plans: PlanCatalogRow[] }) {
               {plan.description && <div className="text-xs text-muted">{plan.description}</div>}
             </Td>
             <Td align="right">₹{plan.price_inr}</Td>
+            <Td align="right">{plan.annual_price_inr !== null ? `₹${plan.annual_price_inr}` : "—"}</Td>
             <Td align="right">{plan.period_days} days</Td>
             <Td align="right">{plan.coins_included}</Td>
             <Td>{plan.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="pending">Inactive</Badge>}</Td>

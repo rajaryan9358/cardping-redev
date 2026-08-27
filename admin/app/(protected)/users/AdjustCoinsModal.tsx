@@ -34,7 +34,7 @@ export function AdjustCoinsModal({
   async function handleSave() {
     const delta = Number(amount);
     if (!Number.isFinite(delta) || delta === 0) {
-      setError("Enter a non-zero number — positive to add coins, negative to deduct.");
+      setError("Enter a non-zero number — positive to add credits, negative to deduct.");
       return;
     }
     setSaving(true);
@@ -55,7 +55,7 @@ export function AdjustCoinsModal({
     <Modal
       open={target !== null}
       onClose={onClose}
-      title={`Adjust coins — ${target.full_name || "Unnamed user"}`}
+      title={`Adjust credits — ${target.full_name || "Unnamed user"}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -69,7 +69,7 @@ export function AdjustCoinsModal({
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">
-          Current balance: <span className="font-medium text-ink">{target.effective_coin_balance}</span> coins
+          Current balance: <span className="font-medium text-ink">{target.effective_coin_balance}</span> credits
         </p>
         <TextField
           label="Amount"

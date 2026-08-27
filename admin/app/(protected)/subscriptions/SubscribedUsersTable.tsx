@@ -32,9 +32,13 @@ export function SubscribedUsersTable({
   const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [changePlanFor, setChangePlanFor] = useState<SubscribedUserRow | null>(null);
 
-  function navigate(p: number) {
+  function navigate(next: { page?: number; pageSize?: number }) {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("page", String(p));
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
+      params.set("page", "1");
+    }
+    if (next.page !== undefined) params.set("page", String(next.page));
     // Hard navigation, not router.push: a soft nav to a URL visited earlier
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale rows included — before router.refresh()
@@ -118,7 +122,8 @@ export function SubscribedUsersTable({
         pageCount={Math.max(1, Math.ceil(total / pageSize))}
         totalItems={total}
         pageSize={pageSize}
-        onPageChange={navigate}
+        onPageChange={(p) => navigate({ page: p })}
+        onPageSizeChange={(size) => navigate({ pageSize: size })}
       />
 
       <ChangePlanModal

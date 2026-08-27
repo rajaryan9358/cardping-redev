@@ -25,7 +25,9 @@ export async function runBroadcastCampaign(
 ): Promise<void> {
   const recipients = await adminBroadcastsRepo.getPendingRecipients(campaignId);
   if (recipients.length === 0) {
-    await adminBroadcastsRepo.setCampaignStatus(campaignId, "completed");
+    // Nobody to send to means nothing was actually delivered — surface it
+    // as failed rather than a misleadingly reassuring "completed".
+    await adminBroadcastsRepo.setCampaignStatus(campaignId, "failed");
     return;
   }
 
@@ -39,6 +41,7 @@ export async function runBroadcastCampaign(
     }
   }
 
+  let sentCount = 0;
   for (const recipient of recipients) {
     try {
       if (channel === "whatsapp") {
@@ -52,6 +55,7 @@ export async function runBroadcastCampaign(
         await sendTelegramBroadcastMessage(chatId, body);
       }
       await adminBroadcastsRepo.setRecipientResult(recipient.id, "sent", null);
+      sentCount += 1;
     } catch (error) {
       await adminBroadcastsRepo.setRecipientResult(
         recipient.id,
@@ -62,5 +66,7 @@ export async function runBroadcastCampaign(
     await sleep(SEND_DELAY_MS);
   }
 
-  await adminBroadcastsRepo.setCampaignStatus(campaignId, "completed");
+  // Every recipient failing (sentCount 0) isn't a "completed" run from the
+  // sender's point of view — nothing actually went out.
+  await adminBroadcastsRepo.setCampaignStatus(campaignId, sentCount > 0 ? "completed" : "failed");
 }

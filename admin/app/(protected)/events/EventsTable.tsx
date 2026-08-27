@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, IdCard, Pencil, Trash2, X } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
@@ -15,6 +15,7 @@ import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
 import { AdminEventRow } from "../../../lib/repositories/adminEvents.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
+import { saveListNavState, restoreListScroll } from "../../../lib/listNavState";
 import { deleteEventAction, bulkDeleteEventsAction } from "./actions";
 import { EditEventModal } from "./EditEventModal";
 
@@ -42,7 +43,12 @@ export function EventsTable({
   const [deleteAck, setDeleteAck] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  function navigate(next: { page?: number; search?: string; sort?: string }) {
+  useEffect(() => {
+    restoreListScroll(pathname, searchParams.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function navigate(next: { page?: number; pageSize?: number; search?: string; sort?: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.search !== undefined) {
       params.set("search", next.search);
@@ -51,7 +57,12 @@ export function EventsTable({
     if (next.sort !== undefined) {
       next.sort ? params.set("sort", next.sort) : params.delete("sort");
     }
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
+      params.set("page", "1");
+    }
     if (next.page !== undefined) params.set("page", String(next.page));
+    saveListNavState(pathname, params.toString());
     // Hard navigation, not router.push: a soft nav to a URL visited earlier
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale rows included — before router.refresh()
@@ -152,7 +163,11 @@ export function EventsTable({
               />
             </Td>
             <Td>
-              <Link href={`/events/${event.id}`} className="font-medium text-ink hover:underline">
+              <Link
+                href={`/events/${event.id}`}
+                onClick={() => saveListNavState(pathname, searchParams.toString())}
+                className="font-medium text-ink hover:underline"
+              >
                 {event.name}
               </Link>
             </Td>
@@ -191,6 +206,7 @@ export function EventsTable({
           totalItems={total}
           pageSize={pageSize}
           onPageChange={(p) => navigate({ page: p })}
+          onPageSizeChange={(size) => navigate({ pageSize: size })}
         />
       </TableCard>
 

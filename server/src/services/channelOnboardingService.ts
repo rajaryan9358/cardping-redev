@@ -16,15 +16,27 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-/** Sent to a bot user with no channel_links row yet, on every inbound
- * message, until they link — see whatsapp/telegram router.ts. `target`
- * holds "<channel>:<identifier>" since that's all the dashboard signup page
- * needs on redemption; like the Telegram deep-link code, the token is
- * hashed without folding in a target because the target isn't known until
- * the token itself comes back. A fresh token is minted every time rather
- * than reused, so there's no need to recover a raw token from a stored
- * hash. */
-export async function createOnboardingLink(channel: ChannelLinkChannel, channelIdentifier: string): Promise<string> {
+/** Sent to a bot identity with no *active* channel_links row, on every
+ * inbound message, until they link — see whatsapp/telegram router.ts.
+ * `target` holds "<channel>:<identifier>" since that's all the dashboard
+ * signup/login page needs on redemption; like the Telegram deep-link code,
+ * the token is hashed without folding in a target because the target
+ * isn't known until the token itself comes back. A fresh token is minted
+ * every time rather than reused, so there's no need to recover a raw
+ * token from a stored hash.
+ *
+ * `destination` picks signup vs. login — an identity that has never been
+ * linked to any account goes to signup (new-user flow, shows the free-
+ * credits pitch); one that WAS linked before and is just currently
+ * disconnected goes to login instead (the "welcome back" case — the
+ * dashboard's login page already has full support for an ?onboard= token,
+ * originally built for this exact "open a bot-issued link with an
+ * existing session" case, see OnboardAccountPicker). */
+export async function createOnboardingLink(
+  channel: ChannelLinkChannel,
+  channelIdentifier: string,
+  destination: "signup" | "login" = "signup",
+): Promise<string> {
   const token = crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(Date.now() + ONBOARDING_LINK_TTL_MINUTES * 60_000).toISOString();
   await otpCodesRepo.create({
@@ -33,7 +45,7 @@ export async function createOnboardingLink(channel: ChannelLinkChannel, channelI
     codeHash: hashToken(token),
     expiresAt,
   });
-  return `${env.DASHBOARD_BASE_URL}/signup?onboard=${token}`;
+  return `${env.DASHBOARD_BASE_URL}/${destination}?onboard=${token}`;
 }
 
 export interface ResolvedOnboardingToken {

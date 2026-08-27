@@ -5,6 +5,7 @@ import { Button } from "../../../../components/ui/Button";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 import { EditCardModal, EditCardTarget } from "../EditCardModal";
 import { deleteCardAction } from "../actions";
+import { getListNavHref } from "../../../../lib/listNavState";
 
 export function CardDetailActions({ card }: { card: EditCardTarget }) {
   const [editOpen, setEditOpen] = useState(false);
@@ -34,8 +35,10 @@ export function CardDetailActions({ card }: { card: EditCardTarget }) {
           try {
             await deleteCardAction(card.id);
             // Hard navigation: the /cards list this returns to may already
-            // be in the client Router Cache from before this delete.
-            window.location.href = "/admin/cards";
+            // be in the client Router Cache from before this delete. Goes
+            // back to the last-visited filtered/paged cards URL, not a
+            // bare /cards, if one was saved (see lib/listNavState.ts).
+            window.location.href = `/admin${getListNavHref("/cards")}`;
           } finally {
             setDeleting(false);
           }

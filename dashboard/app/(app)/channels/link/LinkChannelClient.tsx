@@ -65,12 +65,13 @@ export function LinkChannelClient({
               type="button"
               onClick={() => setTab(t)}
               className={cn(
-                "flex-1 rounded-lg py-2.5 text-sm font-medium capitalize transition-colors",
+                "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium capitalize transition-colors",
                 tab === t ? "bg-accent-soft text-accent-text" : "text-muted hover:bg-active-bg hover:text-ink",
               )}
             >
+              <Image src={`/icons/channel-${t}.svg`} alt="" width={16} height={16} />
               {t}
-              {links.some((l) => l.channel === t) && <CheckCircle2 className="ml-1.5 inline size-3.5 text-success-text" strokeWidth={2} />}
+              {links.some((l) => l.channel === t) && <CheckCircle2 className="inline size-3.5 text-success-text" strokeWidth={2} />}
             </button>
           ))}
         </div>

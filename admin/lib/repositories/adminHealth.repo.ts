@@ -7,20 +7,42 @@ import { env } from "../env";
 // server/ shouldn't be able to reach into admin/'s process either way, and
 // keeping the two apps' dependency graphs disjoint is what guarantees that).
 const CHANNELS = ["whatsapp", "telegram"] as const;
-const TRANSACTION_TYPES = ["card_scan", "coin_purchase", "coin_bonus", "refund", "admin_adjustment"] as const;
+// coin_bonus/refund dropped per product decision — rare/manual enough
+// that they're not worth a permanent tile. subscription_payment added —
+// it's a real transaction_type (see schema.sql's "Manual subscription
+// bookkeeping" comment) that was simply missing from this list, so a plan
+// purchase/change never showed up here at all. card_scan is kept (still
+// the clearest "is this channel actually being used" signal) but its
+// tile no longer shows the raw "-1 credits" — every scan is the same
+// -1, so the number added no information, just noise (see page.tsx).
+const TRANSACTION_TYPES = ["card_scan", "subscription_payment", "coin_purchase", "admin_adjustment"] as const;
 
-async function getLastScanByChannel() {
+const CHANNEL_ID_COLUMN: Record<(typeof CHANNELS)[number], "wa_id" | "telegram_id"> = {
+  whatsapp: "wa_id",
+  telegram: "telegram_id",
+};
+
+/** "Last seen" = last time this channel identity sent the bot ANY inbound
+ * message (users.last_login, touched by usersRepo.findOrCreate on every
+ * webhook — see server/src/db/repositories/users.repo.ts#touchLastLogin),
+ * not the last time a scan happened to succeed. A channel can be very
+ * much alive (browsing the menu, setting an event, buying credits)
+ * without a single card scan in between, so scan recency alone was a
+ * misleading proxy for whether a channel is actually connected/responsive. */
+async function getLastSeenByChannel() {
   const results = await Promise.all(
     CHANNELS.map(async (channel) => {
+      const idColumn = CHANNEL_ID_COLUMN[channel];
       const { data, error } = await supabase
-        .from("visiting_cards")
-        .select("id, full_name, created_at")
-        .eq("uploaded_by", channel)
-        .order("created_at", { ascending: false })
+        .from("users")
+        .select("last_login")
+        .not(idColumn, "is", null)
+        .not("last_login", "is", null)
+        .order("last_login", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      return { channel, lastCard: data };
+      return { channel, lastSeenAt: data?.last_login ?? null };
     }),
   );
   return results;
@@ -31,7 +53,7 @@ async function getLastTransactionByType() {
     TRANSACTION_TYPES.map(async (type) => {
       const { data, error } = await supabase
         .from("transactions")
-        .select("id, coins, created_at")
+        .select("id, coins, created_at, amount_inr")
         .eq("type", type)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -91,7 +113,7 @@ async function pingServerHealth(): Promise<ServerHealthResult> {
 }
 
 export const adminHealthRepo = {
-  getLastScanByChannel,
+  getLastSeenByChannel,
   getLastTransactionByType,
   getScanVolumeByDay,
   pingServerHealth,

@@ -1,21 +1,23 @@
 import { adminAuditLogRepo } from "../../../lib/repositories/adminAuditLog.repo";
 import { AuditLogTable } from "./AuditLogTable";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE_OPTIONS = [10, 30, 50, 100];
+const DEFAULT_PAGE_SIZE = 30;
 
 export default async function AuditLogPage({
   searchParams,
 }: {
-  searchParams: { page?: string; action?: string; adminUserId?: string };
+  searchParams: { page?: string; pageSize?: string; action?: string; adminUserId?: string };
 }) {
   const page = Math.max(1, Number(searchParams.page) || 1);
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.pageSize)) ? Number(searchParams.pageSize) : DEFAULT_PAGE_SIZE;
   const action = searchParams.action ?? "";
   const adminUserId = searchParams.adminUserId ?? "";
 
   const [{ rows, total }, actions, admins] = await Promise.all([
     adminAuditLogRepo.listAuditLog({
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
       action: action || undefined,
       adminUserId: adminUserId || undefined,
     }),
@@ -33,7 +35,7 @@ export default async function AuditLogPage({
         rows={rows}
         total={total}
         page={page}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         actions={actions}
         admins={admins}
         selectedAction={action}

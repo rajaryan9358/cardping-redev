@@ -1,6 +1,6 @@
-import { Calendar, ScanLine, TrendingUp, Users } from "lucide-react";
+import { Calendar, ScanLine, Users } from "lucide-react";
 import Link from "next/link";
-import { StatCard } from "@/components/ui/StatCard";
+import { StatCard, TrendIndicator } from "@/components/ui/StatCard";
 import { LowBalanceCard, LOW_BALANCE_THRESHOLD } from "@/components/ui/LowBalanceCard";
 import { PlanStatusCard } from "@/components/ui/PlanStatusCard";
 import { ScansExplorer } from "@/components/scans/ScansExplorer";
@@ -33,20 +33,23 @@ export default async function HomePage() {
       </div>
 
       <div className="flex gap-4">
-        <StatCard label="Total Contacts" value={summary.totalContacts} icon={Users} />
-        <StatCard label="Total Events" value={summary.totalEvents} icon={Calendar} />
+        <StatCard
+          label="Total Contacts"
+          value={summary.totalContacts}
+          icon={Users}
+          trend={<TrendIndicator pct={summary.contactsTrendPct} />}
+        />
+        <StatCard
+          label="Total Events"
+          value={summary.totalEvents}
+          icon={Calendar}
+          trend={<TrendIndicator pct={summary.eventsTrendPct} />}
+        />
         <StatCard
           label="Scans This Week"
           value={summary.scansThisWeek}
           icon={ScanLine}
-          trend={
-            summary.scansTrendPct !== null ? (
-              <span className={`flex items-center gap-1 text-sm ${summary.scansTrendPct >= 0 ? "text-success-text" : "text-danger-text"}`}>
-                <TrendingUp className="size-3.5" strokeWidth={2.25} /> {summary.scansTrendPct >= 0 ? "+" : ""}
-                {summary.scansTrendPct}%
-              </span>
-            ) : undefined
-          }
+          trend={<TrendIndicator pct={summary.scansTrendPct} />}
         />
       </div>
 

@@ -7,7 +7,15 @@ import { TextField } from "../../../components/ui/TextField";
 import { PlanCatalogRow, PlanInput } from "../../../lib/repositories/adminSubscriptions.repo";
 import { createPlanAction, updatePlanAction } from "./actions";
 
-const EMPTY: PlanInput = { name: "", price_inr: 0, period_days: 30, coins_included: 0, description: "", benefits: [] };
+const EMPTY: PlanInput = {
+  name: "",
+  price_inr: 0,
+  annual_price_inr: null,
+  period_days: 30,
+  coins_included: 0,
+  description: "",
+  benefits: [],
+};
 
 export function PlanFormModal({
   plan,
@@ -29,6 +37,7 @@ export function PlanFormModal({
       setForm({
         name: plan.name,
         price_inr: plan.price_inr,
+        annual_price_inr: plan.annual_price_inr,
         period_days: plan.period_days,
         coins_included: plan.coins_included,
         description: plan.description ?? "",
@@ -76,13 +85,22 @@ export function PlanFormModal({
     >
       <div className="flex flex-col gap-4">
         <TextField label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <TextField
-            label="Price (₹)"
+            label="Monthly price (₹)"
             type="number"
             value={form.price_inr}
             onChange={(e) => setForm({ ...form, price_inr: Number(e.target.value) })}
           />
+          <TextField
+            label="Annual price (₹, optional)"
+            type="number"
+            placeholder="Leave blank to disable annual billing"
+            value={form.annual_price_inr ?? ""}
+            onChange={(e) => setForm({ ...form, annual_price_inr: e.target.value === "" ? null : Number(e.target.value) })}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <TextField
             label="Period (days)"
             type="number"
@@ -90,7 +108,7 @@ export function PlanFormModal({
             onChange={(e) => setForm({ ...form, period_days: Number(e.target.value) })}
           />
           <TextField
-            label="Coins included"
+            label="Credits included"
             type="number"
             value={form.coins_included}
             onChange={(e) => setForm({ ...form, coins_included: Number(e.target.value) })}

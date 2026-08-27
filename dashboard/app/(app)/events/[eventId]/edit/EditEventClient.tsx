@@ -4,6 +4,7 @@ import { Upload } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LocationAutocompleteInput } from "@/components/events/LocationAutocompleteInput";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 import { EventRecord } from "@/lib/types";
 
@@ -20,13 +21,15 @@ export function EditEventClient({ event }: { event: EventRecord }) {
     const form = new FormData(e.currentTarget);
     const name = form.get("name") as string;
     const location = (form.get("location") as string) || null;
+    const lat = form.get("lat") ? Number(form.get("lat")) : null;
+    const lng = form.get("lng") ? Number(form.get("lng")) : null;
     const eventDate = (form.get("eventDate") as string) || null;
 
     setSaving(true);
     try {
       await clientFetch(`/api/events/${event.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name, location, eventDate, status: activeStatus }),
+        body: JSON.stringify({ name, location, lat, lng, eventDate, status: activeStatus }),
       });
 
       const thumbnailFile = fileInputRef.current?.files?.[0];
@@ -88,12 +91,7 @@ export function EditEventClient({ event }: { event: EventRecord }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted">Location / Venue</label>
-            <input
-              name="location"
-              defaultValue={event.location ?? ""}
-              placeholder="e.g., Moscone Center"
-              className="rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
+            <LocationAutocompleteInput defaultValue={event.location} defaultLat={event.lat} defaultLng={event.lng} />
           </div>
         </div>
 

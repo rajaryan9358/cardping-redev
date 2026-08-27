@@ -80,8 +80,13 @@ async function processCashfreeWebhook(body: any): Promise<void> {
           account.plan_expires_at && new Date(account.plan_expires_at).getTime() > Date.now()
             ? new Date(account.plan_expires_at)
             : new Date();
-        const expiresAt = new Date(base.getTime() + plan.period_days * 24 * 60 * 60 * 1000);
-        await accountsRepo.update(account.id, { plan_id: plan.id, plan_expires_at: expiresAt.toISOString() });
+        const periodDays = transaction.billing_period === "annual" ? 365 : plan.period_days;
+        const expiresAt = new Date(base.getTime() + periodDays * 24 * 60 * 60 * 1000);
+        await accountsRepo.update(account.id, {
+          plan_id: plan.id,
+          plan_expires_at: expiresAt.toISOString(),
+          plan_billing_period: transaction.billing_period,
+        });
         updatedAccount = await accountsRepo.incrementCoinBalance(account.id, plan.coins_included);
       }
     } else {

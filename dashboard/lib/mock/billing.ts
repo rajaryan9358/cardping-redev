@@ -1,16 +1,16 @@
 import { Plan, Transaction } from "../types";
 
 export const mockPlans: Plan[] = [
-  { id: "plan_starter", name: "Starter", priceInr: 999, periodDays: 30, coinsIncluded: 200, isCurrent: false },
-  { id: "plan_professional", name: "Professional", priceInr: 2499, periodDays: 30, coinsIncluded: 750, isCurrent: true },
-  { id: "plan_enterprise", name: "Enterprise", priceInr: 5999, periodDays: 30, coinsIncluded: 2000, isCurrent: false },
+  { id: "plan_starter", name: "Starter", priceInr: 999, annualPriceInr: 9990, periodDays: 30, coinsIncluded: 200, isCurrent: false },
+  { id: "plan_professional", name: "Professional", priceInr: 2499, annualPriceInr: 24990, periodDays: 30, coinsIncluded: 750, isCurrent: true },
+  { id: "plan_enterprise", name: "Enterprise", priceInr: 5999, annualPriceInr: 59990, periodDays: 30, coinsIncluded: 2000, isCurrent: false },
 ];
 
 export const mockTransactions: Transaction[] = [
   {
     id: "txn_1",
     type: "coin_purchase",
-    description: "Coin Top-Up — 500 Coins",
+    description: "Credit Top-Up — 500 Credits",
     amountInr: 4900,
     status: "completed",
     occurredAt: "2026-09-28",
@@ -46,7 +46,7 @@ export const mockTransactions: Transaction[] = [
   {
     id: "txn_5",
     type: "coin_purchase",
-    description: "Coin Top-Up — 1000 Coins",
+    description: "Credit Top-Up — 1000 Credits",
     amountInr: 8900,
     status: "failed",
     occurredAt: "2026-07-25",

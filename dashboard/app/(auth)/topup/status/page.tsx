@@ -10,7 +10,7 @@ export default function TopUpStatusPage() {
     <Suspense>
       <StatusClient
         title="Payment received!"
-        description="We're confirming it now — your coin balance will update within a minute or two."
+        description="We're confirming it now — your credit balance will update within a minute or two."
       />
     </Suspense>
   );

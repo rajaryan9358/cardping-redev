@@ -7,7 +7,7 @@ import { TextField } from "../../../components/ui/TextField";
 import { TopUpCatalogRow, TopUpInput } from "../../../lib/repositories/adminSubscriptions.repo";
 import { createTopUpAction, updateTopUpAction } from "./actions";
 
-const EMPTY: TopUpInput = { coins: 0, price_inr: 0, description: "", benefits: [], is_popular: false };
+const EMPTY: TopUpInput = { coins: 0, price_inr: 0, description: "", benefits: [], is_popular: false, tag: "", is_default: false };
 
 export function TopUpFormModal({
   topUp,
@@ -32,6 +32,8 @@ export function TopUpFormModal({
         description: topUp.description ?? "",
         benefits: topUp.benefits,
         is_popular: topUp.is_popular,
+        tag: topUp.tag ?? "",
+        is_default: topUp.is_default,
       });
       setBenefitsText(topUp.benefits.join("\n"));
     } else {
@@ -61,7 +63,7 @@ export function TopUpFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={topUp ? `Edit ${topUp.coins}-coin top-up` : "Add top-up package"}
+      title={topUp ? `Edit ${topUp.coins}-credit top-up` : "Add top-up package"}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -75,7 +77,7 @@ export function TopUpFormModal({
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
-          <TextField label="Coins" type="number" value={form.coins} onChange={(e) => setForm({ ...form, coins: Number(e.target.value) })} />
+          <TextField label="Credits" type="number" value={form.coins} onChange={(e) => setForm({ ...form, coins: Number(e.target.value) })} />
           <TextField
             label="Price (₹)"
             type="number"
@@ -91,6 +93,20 @@ export function TopUpFormModal({
           />
           Mark as "Most popular"
         </label>
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={form.is_default}
+            onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
+          />
+          Pre-select this package by default
+        </label>
+        <TextField
+          label="Tag (optional)"
+          placeholder='e.g. "Best Value"'
+          value={form.tag}
+          onChange={(e) => setForm({ ...form, tag: e.target.value })}
+        />
         <div className="flex flex-col gap-2">
           <label className="text-xs font-semibold tracking-wide text-muted-2">Description</label>
           <textarea

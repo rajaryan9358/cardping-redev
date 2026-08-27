@@ -1,6 +1,10 @@
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { visitingCardsRepo } from "../../db/repositories/visitingCards.repo";
+import { cardInteractionsRepo } from "../../db/repositories/cardInteractions.repo";
+import { cardVoiceNotesRepo } from "../../db/repositories/cardVoiceNotes.repo";
+import { attachVoiceNoteToCard } from "../../services/voiceNoteService";
 import { requireSession } from "../../middleware/requireSession";
 import { requireActivePlanOrTrial } from "../../middleware/requireActivePlanOrTrial";
 import { resolveUsersIds } from "../../services/accountScope";
@@ -9,6 +13,10 @@ import { parseBody } from "./validate";
 
 export const cardsRouter = Router();
 const log = childLogger("api-cards-route");
+// A few minutes of compressed voice note audio comfortably fits well under
+// this — generous ceiling mainly to reject something wildly wrong (e.g. an
+// accidental video upload), not to cap normal recordings.
+const uploadVoiceNote = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 1000; // ScansExplorer fetches the full set and paginates/filters client-side
@@ -49,6 +57,8 @@ cardsRouter.get("/cards/export.csv", requireSession, requireActivePlanOrTrial, a
       "website",
       "address",
       "linkedin",
+      "qr_code_content",
+      "additional_info",
       "created_at",
     ] as any;
     const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -135,7 +145,8 @@ const updateSchema = z.object({
   twitter: z.string().nullable().optional(),
   facebook: z.string().nullable().optional(),
   instagram: z.string().nullable().optional(),
-  transcribedNote: z.string().nullable().optional(),
+  qrCodeContent: z.string().nullable().optional(),
+  additionalInfo: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   archived: z.boolean().optional(),
   eventId: z.string().optional(),
@@ -161,7 +172,8 @@ cardsRouter.patch("/cards/:id", requireSession, requireActivePlanOrTrial, async 
       twitter: body.twitter,
       facebook: body.facebook,
       instagram: body.instagram,
-      transcribed_note: body.transcribedNote,
+      qr_code_content: body.qrCodeContent,
+      additional_info: body.additionalInfo,
       tags: body.tags,
       archived: body.archived,
       event_id: body.eventId,
@@ -170,12 +182,92 @@ cardsRouter.patch("/cards/:id", requireSession, requireActivePlanOrTrial, async 
       res.status(404).json({ error: "not_found" });
       return;
     }
+
+    // One PATCH can touch several kinds of change at once (e.g. a bulk
+    // "move to event" isn't this route, but archiving alongside a field
+    // edit is possible from the card detail page) — log each kind that
+    // actually happened rather than picking just one.
+    if (body.archived !== undefined) {
+      await cardInteractionsRepo.create(card.id, body.archived ? "archived" : "unarchived");
+    }
+    if (body.eventId !== undefined) {
+      await cardInteractionsRepo.create(card.id, "event_changed", { eventId: body.eventId });
+    }
+    const editedFields = Object.keys(body).filter((k) => k !== "archived" && k !== "eventId");
+    if (editedFields.length > 0) {
+      await cardInteractionsRepo.create(card.id, "edited", { fields: editedFields });
+    }
+
     res.json({ card });
   } catch (err) {
     log.error({ err }, "update card failed");
     res.status(500).json({ error: "update_card_failed" });
   }
 });
+
+cardsRouter.get("/cards/:id/interactions", requireSession, requireActivePlanOrTrial, async (req, res) => {
+  try {
+    const usersIds = await resolveUsersIds(req.account!.id);
+    const card = await visitingCardsRepo.findByIdForAccount(req.params.id, usersIds);
+    if (!card) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const interactions = await cardInteractionsRepo.listForCard(req.params.id);
+    res.json({ interactions });
+  } catch (err) {
+    log.error({ err }, "list card interactions failed");
+    res.status(500).json({ error: "list_interactions_failed" });
+  }
+});
+
+cardsRouter.get("/cards/:id/voice-notes", requireSession, requireActivePlanOrTrial, async (req, res) => {
+  try {
+    const usersIds = await resolveUsersIds(req.account!.id);
+    const card = await visitingCardsRepo.findByIdForAccount(req.params.id, usersIds);
+    if (!card) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const voiceNotes = await cardVoiceNotesRepo.listForCard(req.params.id);
+    res.json({ voiceNotes });
+  } catch (err) {
+    log.error({ err }, "list card voice notes failed");
+    res.status(500).json({ error: "list_voice_notes_failed" });
+  }
+});
+
+// Recorded directly in the dashboard (as opposed to a WhatsApp/Telegram
+// reply, handled by the bots) — same underlying attachVoiceNoteToCard as
+// the bot path, so it's transcribed and logged as a card_interactions
+// "voice_note_added" event identically. Never costs a credit: only a card
+// scan does (see cardService.processCardImage/walletService.charge), and
+// this route never touches either.
+cardsRouter.post(
+  "/cards/:id/voice-notes",
+  requireSession,
+  requireActivePlanOrTrial,
+  uploadVoiceNote.single("audio"),
+  async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "no_file" });
+      return;
+    }
+    try {
+      const usersIds = await resolveUsersIds(req.account!.id);
+      const card = await visitingCardsRepo.findByIdForAccount(req.params.id, usersIds);
+      if (!card) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const voiceNote = await attachVoiceNoteToCard(req.account!.id, card, req.file.buffer, req.file.mimetype);
+      res.json({ voiceNote });
+    } catch (err) {
+      log.error({ err }, "add card voice note failed");
+      res.status(500).json({ error: "add_voice_note_failed" });
+    }
+  },
+);
 
 cardsRouter.delete("/cards/:id", requireSession, requireActivePlanOrTrial, async (req, res) => {
   try {

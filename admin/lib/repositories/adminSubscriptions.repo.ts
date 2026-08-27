@@ -6,6 +6,7 @@ export interface Plan {
   id: string;
   name: string;
   price_inr: number;
+  annual_price_inr: number | null;
   period_days: number;
   coins_included: number;
   is_active: boolean;
@@ -14,7 +15,7 @@ export interface Plan {
 async function listPlans(): Promise<Plan[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("id, name, price_inr, period_days, coins_included, is_active")
+    .select("id, name, price_inr, annual_price_inr, period_days, coins_included, is_active")
     .eq("is_active", true)
     .order("price_inr", { ascending: true });
   if (error) throw error;
@@ -45,11 +46,9 @@ async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
   const [accountsRes, legacyUsersRes, earningRes, linked] = await Promise.all([
     supabase.from("accounts").select("plan_expires_at").not("plan_id", "is", null),
     supabase.from("users").select("id, plan_expires_at").not("plan_id", "is", null),
-    supabase
-      .from("transactions")
-      .select("amount_inr")
-      .eq("type", "subscription_payment")
-      .eq("status", "completed"),
+    // Both real revenue types — a subscription-only figure here used to
+    // silently exclude every top-up purchase from "Total earning".
+    supabase.from("transactions").select("amount_inr").in("type", ["subscription_payment", "coin_purchase"]).eq("status", "completed"),
     linkedUsersIds(),
   ]);
 
@@ -68,6 +67,74 @@ async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
     expired: all.length - active,
     totalEarningInr,
   };
+}
+
+export type EarningType = "subscription_payment" | "coin_purchase";
+
+export interface EarningTransactionRow {
+  id: string;
+  amount_inr: number;
+  created_at: string;
+  full_name: string | null;
+  email: string | null;
+}
+
+/** Backs the "Total earning" stat card's detail view — same two revenue
+ * types as getSubscriptionSummary, but listable/filterable by date range
+ * and split per-type instead of pre-summed. Sum is computed by fetching
+ * every matching row's amount (not a DB-side aggregate) — same
+ * simple-scale tradeoff already used elsewhere in this app (see
+ * getSubscriptionSummary above). */
+async function listEarningTransactions({
+  type,
+  from,
+  to,
+  page,
+  pageSize,
+}: {
+  type: EarningType;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}): Promise<{ rows: EarningTransactionRow[]; total: number; sumInr: number }> {
+  let rowsQuery = supabase
+    .from("transactions")
+    .select("id, amount_inr, created_at, accounts(full_name, email)", { count: "exact" })
+    .eq("type", type)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false });
+  let sumQuery = supabase.from("transactions").select("amount_inr").eq("type", type).eq("status", "completed");
+
+  if (from) {
+    rowsQuery = rowsQuery.gte("created_at", from);
+    sumQuery = sumQuery.gte("created_at", from);
+  }
+  if (to) {
+    rowsQuery = rowsQuery.lte("created_at", to);
+    sumQuery = sumQuery.lte("created_at", to);
+  }
+
+  const [{ data, error, count }, sumRes] = await Promise.all([
+    rowsQuery.range((page - 1) * pageSize, page * pageSize - 1),
+    sumQuery,
+  ]);
+  if (error) throw error;
+  if (sumRes.error) throw sumRes.error;
+
+  const rows: EarningTransactionRow[] = (data ?? []).map((row) => {
+    const account = row.accounts as unknown as { full_name: string | null; email: string | null } | null;
+    return {
+      id: row.id,
+      amount_inr: Number(row.amount_inr ?? 0),
+      created_at: row.created_at,
+      full_name: account?.full_name ?? null,
+      email: account?.email ?? null,
+    };
+  });
+  const sumInr = (sumRes.data ?? []).reduce((sum, r) => sum + Number(r.amount_inr ?? 0), 0);
+
+  return { rows, total: count ?? 0, sumInr };
 }
 
 export interface SubscribedUserRow {
@@ -98,7 +165,7 @@ async function listSubscribedUsers(page: number, pageSize: number): Promise<Pagi
   const [{ data: accounts, error: accErr }, { data: links, error: linkErr }, { data: legacyUsers, error: userErr }, linked] =
     await Promise.all([
       supabase.from("accounts").select("id, full_name, email, plan_id, plan_expires_at").not("plan_id", "is", null),
-      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier"),
+      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier, unlinked_at"),
       supabase.from("users").select("id, full_name, email, wa_id, plan_id, plan_expires_at").not("plan_id", "is", null),
       linkedUsersIds(),
     ]);
@@ -106,8 +173,13 @@ async function listSubscribedUsers(page: number, pageSize: number): Promise<Pagi
   if (linkErr) throw linkErr;
   if (userErr) throw userErr;
 
-  const linksByAccount = new Map<string, typeof links>();
-  for (const link of links ?? []) {
+  // Only currently-active channels — a disconnected one shouldn't still
+  // show as connected here (linkedUsersIds, used below for the legacy-row
+  // dedup, deliberately does the opposite: it counts a channel as
+  // "belongs to an account" whether active or not).
+  const activeLinks = (links ?? []).filter((l) => l.unlinked_at === null);
+  const linksByAccount = new Map<string, typeof activeLinks>();
+  for (const link of activeLinks) {
     const arr = linksByAccount.get(link.account_id) ?? [];
     arr.push(link);
     linksByAccount.set(link.account_id, arr);
@@ -296,6 +368,7 @@ export interface PlanCatalogRow {
   id: string;
   name: string;
   price_inr: number;
+  annual_price_inr: number | null;
   period_days: number;
   coins_included: number;
   description: string | null;
@@ -306,6 +379,10 @@ export interface PlanCatalogRow {
 export interface PlanInput {
   name: string;
   price_inr: number;
+  // Optional — a plan with no annual price set yet just isn't offered as
+  // an annual option on the dashboard's billing toggle (it falls back to
+  // showing the monthly price for that plan there).
+  annual_price_inr: number | null;
   period_days: number;
   coins_included: number;
   description: string;
@@ -315,7 +392,7 @@ export interface PlanInput {
 async function listAllPlans(): Promise<PlanCatalogRow[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("id, name, price_inr, period_days, coins_included, description, benefits, is_active")
+    .select("id, name, price_inr, annual_price_inr, period_days, coins_included, description, benefits, is_active")
     .order("price_inr", { ascending: true });
   if (error) throw error;
   return (data ?? []) as PlanCatalogRow[];
@@ -327,6 +404,7 @@ async function createPlan(input: PlanInput): Promise<void> {
     id,
     name: input.name,
     price_inr: input.price_inr,
+    annual_price_inr: input.annual_price_inr,
     period_days: input.period_days,
     coins_included: input.coins_included,
     description: input.description || null,
@@ -341,6 +419,7 @@ async function updatePlan(id: string, input: PlanInput): Promise<void> {
     .update({
       name: input.name,
       price_inr: input.price_inr,
+      annual_price_inr: input.annual_price_inr,
       period_days: input.period_days,
       coins_included: input.coins_included,
       description: input.description || null,
@@ -365,6 +444,8 @@ export interface TopUpCatalogRow {
   benefits: string[];
   is_popular: boolean;
   is_active: boolean;
+  tag: string | null;
+  is_default: boolean;
 }
 
 export interface TopUpInput {
@@ -373,12 +454,14 @@ export interface TopUpInput {
   description: string;
   benefits: string[];
   is_popular: boolean;
+  tag: string;
+  is_default: boolean;
 }
 
 async function listAllTopUps(): Promise<TopUpCatalogRow[]> {
   const { data, error } = await supabase
     .from("topup_packages")
-    .select("id, coins, price_inr, description, benefits, is_popular, is_active")
+    .select("id, coins, price_inr, description, benefits, is_popular, is_active, tag, is_default")
     .order("price_inr", { ascending: true });
   if (error) throw error;
   return (data ?? []) as TopUpCatalogRow[];
@@ -393,6 +476,8 @@ async function createTopUp(input: TopUpInput): Promise<void> {
     description: input.description || null,
     benefits: input.benefits,
     is_popular: input.is_popular,
+    tag: input.tag || null,
+    is_default: input.is_default,
   });
   if (error) throw error;
 }
@@ -406,6 +491,8 @@ async function updateTopUp(id: string, input: TopUpInput): Promise<void> {
       description: input.description || null,
       benefits: input.benefits,
       is_popular: input.is_popular,
+      tag: input.tag || null,
+      is_default: input.is_default,
     })
     .eq("id", id);
   if (error) throw error;
@@ -419,6 +506,7 @@ async function setTopUpActive(id: string, active: boolean): Promise<void> {
 export const adminSubscriptionsRepo = {
   listPlans,
   getSubscriptionSummary,
+  listEarningTransactions,
   listSubscribedUsers,
   setUserPlan,
   clearUserPlan,

@@ -9,6 +9,7 @@ interface ServerPlan {
   id: string;
   name: string;
   price_inr: number;
+  annual_price_inr: number | null;
   period_days: number;
   coins_included: number;
   isCurrent: boolean;
@@ -22,6 +23,7 @@ export async function getPlans(): Promise<Plan[]> {
     id: p.id,
     name: p.name,
     priceInr: p.price_inr,
+    annualPriceInr: p.annual_price_inr,
     periodDays: p.period_days,
     coinsIncluded: p.coins_included,
     isCurrent: p.isCurrent,
@@ -58,8 +60,8 @@ interface ServerInvoice {
 
 const DESCRIPTIONS: Record<string, string> = {
   card_scan: "Card scan",
-  coin_purchase: "Coin top-up",
-  coin_bonus: "Bonus coins",
+  coin_purchase: "Credit top-up",
+  coin_bonus: "Bonus credits",
   refund: "Refund",
   admin_adjustment: "Balance adjustment",
   subscription_payment: "Plan subscription",
@@ -83,7 +85,7 @@ export async function getTransactions(): Promise<Transaction[]> {
     .map((t) => ({
       id: t.id,
       type: t.type as TransactionType,
-      description: t.type === "coin_purchase" ? `${DESCRIPTIONS[t.type]} (${t.coins} coins)` : DESCRIPTIONS[t.type],
+      description: t.type === "coin_purchase" ? `${DESCRIPTIONS[t.type]} (${t.coins} credits)` : DESCRIPTIONS[t.type],
       amountInr: t.amount_inr ?? 0,
       status: t.status,
       occurredAt: t.created_at,

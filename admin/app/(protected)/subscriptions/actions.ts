@@ -2,10 +2,30 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
-import { adminSubscriptionsRepo, PlanInput, TopUpInput } from "../../../lib/repositories/adminSubscriptions.repo";
+import {
+  adminSubscriptionsRepo,
+  EarningTransactionRow,
+  EarningType,
+  PlanInput,
+  TopUpInput,
+} from "../../../lib/repositories/adminSubscriptions.repo";
 import { adminUsersRepo } from "../../../lib/repositories/adminUsers.repo";
 import { writeAuditLog } from "../../../lib/auditLog";
 import { sendNotification } from "../../../lib/notificationSend";
+
+/** Backs the "Total earning" detail modal — a read, not a mutation, but
+ * routed through a Server Action anyway (same as every other data access
+ * this client-interactive page triggers) rather than a new API route. */
+export async function getEarningTransactionsAction(params: {
+  type: EarningType;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}): Promise<{ rows: EarningTransactionRow[]; total: number; sumInr: number }> {
+  await requireAdmin();
+  return adminSubscriptionsRepo.listEarningTransactions(params);
+}
 
 export async function setUserPlanAction(userId: string, planId: string): Promise<void> {
   const admin = await requireAdmin();
@@ -83,7 +103,7 @@ function validatePlanInput(input: PlanInput): string | null {
   if (!input.name.trim()) return "Enter a plan name.";
   if (!(input.price_inr > 0)) return "Price must be greater than 0.";
   if (!(input.period_days > 0)) return "Period must be greater than 0 days.";
-  if (input.coins_included < 0) return "Coins included can't be negative.";
+  if (input.coins_included < 0) return "Credits included can't be negative.";
   return null;
 }
 
@@ -122,7 +142,7 @@ export async function setPlanActiveAction(id: string, active: boolean): Promise<
 }
 
 function validateTopUpInput(input: TopUpInput): string | null {
-  if (!(input.coins > 0)) return "Coins must be greater than 0.";
+  if (!(input.coins > 0)) return "Credits must be greater than 0.";
   if (!(input.price_inr > 0)) return "Price must be greater than 0.";
   return null;
 }

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Bell, MessageCircle, ScanLine, Send } from "lucide-react";
+import { Bell, MessageCircle, ScanLine, Send } from "lucide-react";
 import { adminUsersRepo } from "../../../../lib/repositories/adminUsers.repo";
 import { env } from "../../../../lib/env";
 import { Badge } from "../../../../components/ui/Badge";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../../components/ui/Table";
+import { BackLink } from "../../../../components/ui/BackLink";
 import { formatDate, formatDateTime } from "../../../../lib/format";
 import { UserDetailActions } from "./UserDetailActions";
+import { ChannelIcon } from "@/components/ChannelIcon";
 
 export default async function UserDetailPage({ params }: { params: { userId: string } }) {
   const user = await adminUsersRepo.getUserDetail(params.userId);
@@ -21,10 +23,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
 
   return (
     <div className="flex flex-col gap-8">
-      <Link href="/users" className="flex w-fit items-center gap-1.5 text-sm text-muted hover:text-ink">
-        <ArrowLeft className="size-4" strokeWidth={2} />
-        Back to users
-      </Link>
+      <BackLink basePath="/users" label="Back to users" />
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -57,7 +56,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Coin balance</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Credit balance</p>
           <div className="mt-2 flex items-center gap-2">
             <p className="text-3xl font-semibold text-ink">{user.effective_coin_balance}</p>
             {user.effective_coin_balance <= env.LOW_BALANCE_THRESHOLD && <Badge tone="warning">Low</Badge>}
@@ -115,7 +114,9 @@ export default async function UserDetailPage({ params }: { params: { userId: str
                 </Link>
               </Td>
               <Td>{card.company_name || "—"}</Td>
-              <Td className="capitalize">{card.uploaded_by || "—"}</Td>
+              <Td>
+                <ChannelIcon channel={card.uploaded_by} />
+              </Td>
               <Td align="right">
                 {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
               </Td>
@@ -130,7 +131,7 @@ export default async function UserDetailPage({ params }: { params: { userId: str
         <TableCard>
           <TableHeaderRow>
             <Th>Type</Th>
-            <Th align="right">Coins</Th>
+            <Th align="right">Credits</Th>
             <Th>Status</Th>
             <Th align="right">Date</Th>
           </TableHeaderRow>

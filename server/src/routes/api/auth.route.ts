@@ -91,7 +91,7 @@ authRouter.post("/auth/signup", async (req, res) => {
     }
 
     await setMarketingOptInForAccount(account.id, body.marketingOptIn);
-    await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+    await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "login", req.ip);
     res.json({ account: sanitizeAccount(account), linkedChannel, returnUrl });
   } catch (err) {
     log.error({ err }, "signup failed");
@@ -121,7 +121,7 @@ authRouter.post("/auth/login", async (req, res) => {
       return;
     }
 
-    await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+    await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "login", req.ip);
 
     if (body.onboardToken) {
       const attach = await channelOnboardingService.attachChannelToAccount(account.id, body.onboardToken);
@@ -218,7 +218,7 @@ authRouter.get("/auth/google/callback", async (req, res) => {
       return;
     }
 
-    await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+    await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "login", req.ip);
     res.redirect(account.onboarded_at ? "/home" : "/onboarding");
   } catch (err) {
     log.error({ err }, "Google dashboard login callback failed");
@@ -253,7 +253,7 @@ authRouter.get("/auth/magic-login", async (req, res) => {
     return;
   }
 
-  await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "magic_login");
+  await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "magic_login", req.ip);
   res.redirect(resolved.destinationPath);
 });
 
@@ -299,7 +299,7 @@ authRouter.post("/auth/otp/verify", async (req, res) => {
       return;
     }
 
-    await createSessionAndSetCookie(res, account.id, req.header("user-agent"));
+    await createSessionAndSetCookie(res, account.id, req.header("user-agent"), "login", req.ip);
     res.json({ account: sanitizeAccount(account) });
   } catch (err) {
     log.error({ err }, "OTP login verify failed");

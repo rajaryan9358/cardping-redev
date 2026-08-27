@@ -2,7 +2,7 @@
 // Bodies now call server/'s real /api/*.
 
 import { redirectIfPaywalled, serverFetch } from "../serverFetch";
-import { Channel, InteractionEvent, VisitingCard } from "../types";
+import { Channel, InteractionEvent, VisitingCard, VoiceNote } from "../types";
 
 interface ServerCard {
   id: string;
@@ -19,13 +19,13 @@ interface ServerCard {
   twitter: string | null;
   facebook: string | null;
   instagram: string | null;
+  qr_code_content: string | null;
+  additional_info: string | null;
   image_public_url: string | null;
   back_image_public_url: string | null;
-  voice_note_public_url: string | null;
-  transcribed_note: string | null;
   tags: string[];
   archived: boolean;
-  uploaded_by: Channel;
+  uploaded_by: Channel | null;
   event_id: string | null;
   event: { id: string; name: string } | null;
   created_at: string;
@@ -48,10 +48,10 @@ function mapCard(c: ServerCard): VisitingCard {
     twitter: c.twitter,
     facebook: c.facebook,
     instagram: c.instagram,
+    qrCodeContent: c.qr_code_content,
+    additionalInfo: c.additional_info,
     imageUrl: c.image_public_url,
     imageBackUrl: c.back_image_public_url,
-    voiceNoteUrl: c.voice_note_public_url,
-    transcribedNote: c.transcribed_note,
     tags: c.tags,
     archived: c.archived,
     uploadedBy: c.uploaded_by,
@@ -99,14 +99,54 @@ export async function getRecentCards(limit = 6): Promise<VisitingCard[]> {
   return recentCards.slice(0, limit).map(mapCard);
 }
 
-// No backing table exists for a per-card interaction timeline (not
-// specified anywhere in docs/DASHBOARD_PLAN.md's data model) — returns
-// empty rather than inventing one; see the contact-detail page, which
-// already renders an empty state for this.
-export async function getInteractions(_cardId: string): Promise<InteractionEvent[]> {
-  return [];
+interface ServerInteraction {
+  id: string;
+  card_id: string;
+  type: "created" | "voice_note_added" | "edited" | "archived" | "unarchived" | "event_changed";
+  detail: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const INTERACTION_LABEL: Record<ServerInteraction["type"], (detail: Record<string, unknown> | null) => string> = {
+  created: (d) => `Scanned via ${d?.channel === "telegram" ? "Telegram" : "WhatsApp"}`,
+  voice_note_added: () => "Voice note added",
+  edited: () => "Details edited",
+  archived: () => "Archived",
+  unarchived: () => "Unarchived",
+  event_changed: () => "Moved to a different event",
+};
+
+export async function getInteractions(cardId: string): Promise<InteractionEvent[]> {
+  const res = await serverFetch(`/api/cards/${cardId}/interactions`);
+  if (!res.ok) return [];
+  const { interactions } = (await res.json()) as { interactions: ServerInteraction[] };
+  return interactions.map((i) => ({
+    id: i.id,
+    cardId: i.card_id,
+    label: INTERACTION_LABEL[i.type](i.detail),
+    occurredAt: i.created_at,
+  }));
 }
 
 export function allTags(cards: VisitingCard[]): string[] {
   return Array.from(new Set(cards.flatMap((c) => c.tags))).sort();
+}
+
+interface ServerVoiceNote {
+  id: string;
+  card_id: string;
+  public_url: string;
+  transcript: string | null;
+  created_at: string;
+}
+
+function mapVoiceNote(v: ServerVoiceNote): VoiceNote {
+  return { id: v.id, url: v.public_url, transcript: v.transcript, recordedAt: v.created_at };
+}
+
+export async function getVoiceNotes(cardId: string): Promise<VoiceNote[]> {
+  const res = await serverFetch(`/api/cards/${cardId}/voice-notes`);
+  if (!res.ok) return [];
+  const { voiceNotes } = (await res.json()) as { voiceNotes: ServerVoiceNote[] };
+  return voiceNotes.map(mapVoiceNote);
 }

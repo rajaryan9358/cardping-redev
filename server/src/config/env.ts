@@ -25,6 +25,16 @@ const envSchema = z.object({
   OPENAI_VISION_MODEL: z.string().default("gpt-4o"),
   OPENAI_TRANSCRIBE_MODEL: z.string().default("whisper-1"),
 
+  // Provider switches for the two AI-backed steps of a scan — env-only,
+  // never exposed through any admin/dashboard UI (see aiUsageLog.repo.ts's
+  // doc comment for why). Swapping either just needs a restart, no code
+  // change or redeploy.
+  VISION_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
+  TRANSCRIPTION_PROVIDER: z.enum(["openai", "google"]).default("openai"),
+  GEMINI_API_KEY: z.string().optional().default(""),
+  GEMINI_VISION_MODEL: z.string().default("gemini-2.0-flash"),
+  GOOGLE_SPEECH_API_KEY: z.string().optional().default(""),
+
   COINS_PER_CARD_SCAN: z.coerce.number().int().positive().default(1),
   COINS_STARTER_BALANCE: z.coerce.number().int().nonnegative().default(5),
 
@@ -36,8 +46,6 @@ const envSchema = z.object({
   CASHFREE_BASE_URL: z.string().default("https://sandbox.cashfree.com/pg"),
   CASHFREE_API_VERSION: z.string().default("2025-01-01"),
   CASHFREE_RETURN_URL: z.string().optional().default(""),
-  COIN_TOPUP_AMOUNT_INR: z.coerce.number().positive().default(1000),
-  COIN_TOPUP_COINS: z.coerce.number().int().positive().default(50),
 
   // dashboard/ auth — see docs/DASHBOARD_PLAN.md.
   SESSION_COOKIE_NAME: z.string().default("cardping_session"),

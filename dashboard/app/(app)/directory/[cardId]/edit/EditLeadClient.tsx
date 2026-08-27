@@ -1,11 +1,10 @@
 "use client";
 
-import { Link2 } from "lucide-react";
+import { Link2, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ImageUploadSlot } from "@/components/ui/ImageUploadSlot";
-import { VoiceNoteField } from "@/components/ui/VoiceNoteField";
 import { VisitingCard } from "@/lib/types";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 
@@ -33,6 +32,110 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div className="rounded-xl border border-border bg-surface p-6 shadow-soft">
       <h2 className="pb-5 text-base font-semibold text-ink">{title}</h2>
       {children}
+    </div>
+  );
+}
+
+// For fields that can hold more than one value (a card can have more than
+// one phone/email/address) — one per line, matching how they're stored
+// and displayed.
+function TextAreaField({
+  label,
+  name,
+  defaultValue,
+  rows = 2,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  rows?: number;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted">{label}</label>
+      <textarea
+        name={name}
+        defaultValue={defaultValue}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+      />
+    </div>
+  );
+}
+
+// Same repeatable-value fields as TextAreaField, but edited as a dynamic
+// list of separate boxes (add/remove) instead of one shared textarea —
+// order here is preserved as-is (first = primary, see visionPrompt.ts's
+// "most prominent first" extraction rule) so dragging isn't offered, only
+// add/remove/edit-in-place. Still submits as one newline-joined string via
+// a hidden input, so the parent form's FormData-based submit needs no
+// changes.
+function MultiValueInput({
+  label,
+  name,
+  defaultValue,
+  placeholder,
+  type = "text",
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  placeholder?: string;
+  type?: "text" | "tel" | "email" | "url";
+}) {
+  const [values, setValues] = useState<string[]>(() => {
+    const lines = defaultValue.split("\n").filter((l) => l.trim().length > 0);
+    return lines.length > 0 ? lines : [""];
+  });
+
+  function update(i: number, v: string) {
+    setValues((prev) => prev.map((x, idx) => (idx === i ? v : x)));
+  }
+  function remove(i: number) {
+    setValues((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : [""]));
+  }
+  function add() {
+    setValues((prev) => [...prev, ""]);
+  }
+
+  const joined = values.map((v) => v.trim()).filter((v) => v.length > 0).join("\n");
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted">{label}</label>
+      <input type="hidden" name={name} value={joined} />
+      <div className="flex flex-col gap-2">
+        {values.map((v, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type={type}
+              value={v}
+              placeholder={i === 0 ? placeholder : `${placeholder ?? "Value"} (additional)`}
+              onChange={(e) => update(i, e.target.value)}
+              className="w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:border-danger-text hover:text-danger-text"
+              aria-label={`Remove ${label} value`}
+            >
+              <X className="size-4" strokeWidth={2} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        className="flex w-fit items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-hover"
+      >
+        <Plus className="size-3.5" strokeWidth={2} />
+        Add another
+      </button>
     </div>
   );
 }
@@ -65,7 +168,8 @@ export function EditLeadClient({ card }: { card: VisitingCard }) {
           twitter: value("twitter"),
           facebook: value("facebook"),
           instagram: value("instagram"),
-          transcribedNote: value("transcribedNote"),
+          qrCodeContent: value("qrCodeContent"),
+          additionalInfo: value("additionalInfo"),
         }),
       });
       await parseJsonOrThrow(res);
@@ -107,23 +211,27 @@ export function EditLeadClient({ card }: { card: VisitingCard }) {
           </div>
           <Field label="Company Name" name="companyName" defaultValue={card.companyName ?? ""} />
           <div className="grid grid-cols-2 gap-5">
-            <Field label="Business Email" name="businessEmail" type="email" defaultValue={card.businessEmail ?? ""} />
-            <Field label="Personal Email" name="personalEmail" type="email" defaultValue={card.personalEmail ?? ""} placeholder="Optional" />
-          </div>
-          <div className="grid grid-cols-2 gap-5">
-            <Field label="Phone 1 (Mobile)" name="phone1" defaultValue={card.phone1 ?? ""} />
-            <Field label="Phone 2 (Work)" name="phone2" defaultValue={card.phone2 ?? ""} placeholder="Optional" />
-          </div>
-          <Field label="Website" name="website" defaultValue={card.website ?? ""} />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted">Address</label>
-            <textarea
-              name="address"
-              defaultValue={card.address ?? ""}
-              rows={2}
-              className="w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            <MultiValueInput
+              label="Business Email(s)"
+              name="businessEmail"
+              type="email"
+              defaultValue={card.businessEmail ?? ""}
+              placeholder="name@company.com"
+            />
+            <MultiValueInput
+              label="Personal Email(s)"
+              name="personalEmail"
+              type="email"
+              defaultValue={card.personalEmail ?? ""}
+              placeholder="name@gmail.com — optional"
             />
           </div>
+          <div className="grid grid-cols-2 gap-5">
+            <MultiValueInput label="Phone(s)" name="phone1" type="tel" defaultValue={card.phone1 ?? ""} placeholder="+1 234 567 8900" />
+            <Field label="Phone (legacy)" name="phone2" defaultValue={card.phone2 ?? ""} placeholder="Optional" />
+          </div>
+          <MultiValueInput label="Website(s)" name="website" type="url" defaultValue={card.website ?? ""} placeholder="https://example.com" />
+          <MultiValueInput label="Address(es)" name="address" defaultValue={card.address ?? ""} placeholder="Street, city, state" />
         </div>
       </Section>
 
@@ -136,21 +244,16 @@ export function EditLeadClient({ card }: { card: VisitingCard }) {
         </div>
       </Section>
 
-      <Section title="Media &amp; Notes">
+      <Section title="Additional Details">
         <div className="flex flex-col gap-5">
-          <VoiceNoteField initialUrl={card.voiceNoteUrl} />
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted">Transcription / Notes</label>
-              {card.transcribedNote && <span className="text-xs text-muted">Auto-transcribed</span>}
-            </div>
-            <textarea
-              name="transcribedNote"
-              defaultValue={card.transcribedNote ?? ""}
-              rows={3}
-              className="w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-          </div>
+          <Field label="QR Code Content" name="qrCodeContent" defaultValue={card.qrCodeContent ?? ""} placeholder="Optional" />
+          <TextAreaField
+            label="Additional Info"
+            name="additionalInfo"
+            defaultValue={card.additionalInfo ?? ""}
+            rows={3}
+            placeholder="Anything else printed on the card"
+          />
         </div>
       </Section>
 

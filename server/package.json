@@ -14,7 +14,9 @@
     "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
     "register:telegram-webhook": "tsx scripts/register-telegram-webhook.ts",
-    "unregister:telegram-webhook": "tsx scripts/register-telegram-webhook.ts --delete"
+    "unregister:telegram-webhook": "tsx scripts/register-telegram-webhook.ts --delete",
+    "merge:duplicate-whatsapp-identities": "tsx scripts/merge-duplicate-whatsapp-identities.ts",
+    "rerun:extraction-for-old-cards": "tsx scripts/rerun-extraction-for-old-cards.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

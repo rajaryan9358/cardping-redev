@@ -28,7 +28,7 @@ export function AuditLogTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  function navigate(next: { page?: number; action?: string; adminUserId?: string }) {
+  function navigate(next: { page?: number; pageSize?: number; action?: string; adminUserId?: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.action !== undefined) {
       next.action ? params.set("action", next.action) : params.delete("action");
@@ -36,6 +36,10 @@ export function AuditLogTable({
     }
     if (next.adminUserId !== undefined) {
       next.adminUserId ? params.set("adminUserId", next.adminUserId) : params.delete("adminUserId");
+      params.set("page", "1");
+    }
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
       params.set("page", "1");
     }
     if (next.page !== undefined) params.set("page", String(next.page));
@@ -103,6 +107,7 @@ export function AuditLogTable({
           totalItems={total}
           pageSize={pageSize}
           onPageChange={(p) => navigate({ page: p })}
+          onPageSizeChange={(size) => navigate({ pageSize: size })}
         />
       </TableCard>
     </div>

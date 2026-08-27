@@ -23,6 +23,7 @@ export interface SessionRow {
   last_seen_at: string;
   expires_at: string;
   source: SessionSource;
+  location: string | null;
 }
 
 async function create(input: {
@@ -31,6 +32,7 @@ async function create(input: {
   userAgent: string | null;
   expiresAt: string;
   source?: SessionSource;
+  location?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase
     .from("sessions")
@@ -40,6 +42,7 @@ async function create(input: {
       user_agent: input.userAgent,
       expires_at: input.expiresAt,
       source: input.source ?? "login",
+      location: input.location ?? null,
     })
     .select("id")
     .single();
@@ -84,7 +87,7 @@ async function deleteAllForAccount(accountId: string): Promise<void> {
 async function listForAccount(accountId: string): Promise<SessionRow[]> {
   const { data, error } = await supabase
     .from("sessions")
-    .select("id, account_id, device_label, user_agent, created_at, last_seen_at, expires_at, source")
+    .select("id, account_id, device_label, user_agent, created_at, last_seen_at, expires_at, source, location")
     .eq("account_id", accountId)
     .neq("source", "magic_login")
     .order("last_seen_at", { ascending: false });

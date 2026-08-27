@@ -16,6 +16,7 @@ export interface Account {
   coinBalance: number;
   planId: string | null;
   planExpiresAt: string | null;
+  planBillingPeriod: "monthly" | "annual" | null;
   scanBothSides: boolean;
   eventLifetimeHours: number | null;
   marketingOptIn: boolean;
@@ -40,15 +41,17 @@ export interface EventRecord {
   id: string;
   name: string;
   location: string | null;
+  lat: number | null;
+  lng: number | null;
   eventDate: string | null;
   thumbnailUrl: string | null;
   leadCount: number;
   isMiscellaneous: boolean;
-  status: "active" | "upcoming" | "past" | "draft";
-  // The owner's manual active/inactive toggle — unrelated to `status`
-  // above, which is a purely date-derived display label. This is what
-  // decides whether the event is offered in an event *picker* (bot's
-  // Change Event flow, the "move card to event" picker).
+  // The one real status: an owner/admin-controlled toggle. Also decides
+  // whether the event is offered in an event *picker* (bot's Change Event
+  // flow, the "move card to event" picker). "Upcoming" is not a stored
+  // status — see isEventUpcoming() — it's a derived display label for an
+  // active event whose date hasn't arrived yet.
   activeStatus: "active" | "inactive";
 }
 
@@ -67,13 +70,13 @@ export interface VisitingCard {
   twitter: string | null;
   facebook: string | null;
   instagram: string | null;
+  qrCodeContent: string | null;
+  additionalInfo: string | null;
   imageUrl: string | null;
   imageBackUrl: string | null;
-  voiceNoteUrl: string | null;
-  transcribedNote: string | null;
   tags: string[];
   archived: boolean;
-  uploadedBy: Channel;
+  uploadedBy: Channel | null;
   eventId: string;
   eventName: string;
   scannedAt: string;
@@ -87,10 +90,22 @@ export interface InteractionEvent {
   occurredAt: string;
 }
 
+// A card can have any number of these — recorded by replying on WhatsApp/
+// Telegram (to the card photo, its summary, its contact card, or a
+// previous voice note's own confirmation — any of them, any time) or
+// recorded directly from the dashboard's "Add new voice note" dialog.
+export interface VoiceNote {
+  id: string;
+  url: string;
+  transcript: string | null;
+  recordedAt: string;
+}
+
 export interface Plan {
   id: string;
   name: string;
   priceInr: number;
+  annualPriceInr: number | null;
   periodDays: number;
   coinsIncluded: number;
   isCurrent: boolean;

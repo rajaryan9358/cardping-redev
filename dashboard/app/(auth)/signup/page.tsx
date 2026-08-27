@@ -1,11 +1,12 @@
 "use client";
 
-import { BadgeCheck, Building2, Lock, LucideIcon, Mail, MessageCircle } from "lucide-react";
+import { BadgeCheck, Building2, LucideIcon, Mail, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 import { useExistingSession } from "@/lib/hooks/useExistingSession";
@@ -180,28 +181,18 @@ function SignUpForm() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold tracking-wide text-muted-2">Password</label>
-            <IconField
-              icon={Lock}
-              type="password"
-              placeholder="••••••••"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold tracking-wide text-muted-2">Confirm password</label>
-            <IconField
-              icon={Lock}
-              type="password"
-              placeholder="••••••••"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-            />
-          </div>
+          <PasswordField
+            label="Password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <PasswordField
+            label="Confirm password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
 
           <label className="flex items-start gap-3 text-sm text-muted">
             <input type="checkbox" required className="mt-0.5 size-4 rounded border-border text-accent" />

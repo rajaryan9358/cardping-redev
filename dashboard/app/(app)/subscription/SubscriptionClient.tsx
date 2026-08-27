@@ -26,13 +26,22 @@ function planDescription(name: string): string {
   return "Custom solutions for large scale operations.";
 }
 
+function annualSavingsPct(monthly: number, annual: number): number {
+  const fullYearAtMonthlyRate = monthly * 12;
+  if (fullYearAtMonthlyRate <= 0) return 0;
+  return Math.round(((fullYearAtMonthlyRate - annual) / fullYearAtMonthlyRate) * 100);
+}
+
 export function SubscriptionClient({ account, plans }: { account: Account; plans: Plan[] }) {
   const coinBalance = account.coinBalance;
   const currentPlan = plans.find((p) => p.id === account.planId);
   const status = getPlanStatus({ ...account, coinBalance }, plans);
   const lowBalance = coinBalance <= LOW_BALANCE_THRESHOLD;
 
-  const [pendingPlan, setPendingPlan] = useState<Plan | null>(null);
+  // Annual by default — matches the discount being the more prominent,
+  // recommended choice on the pricing cards below.
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("annual");
+  const [pendingPlan, setPendingPlan] = useState<{ plan: Plan; billingPeriod: "monthly" | "annual" } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +52,7 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
     try {
       const res = await clientFetch("/api/billing/subscribe", {
         method: "POST",
-        body: JSON.stringify({ planId: pendingPlan.id }),
+        body: JSON.stringify({ planId: pendingPlan.plan.id, billingPeriod: pendingPlan.billingPeriod }),
       });
       const { paymentLinkUrl } = await parseJsonOrThrow<{ paymentLinkUrl: string }>(res);
       // Cashfree's hosted checkout — payment confirmation comes back via
@@ -60,11 +69,11 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-ink">Subscription Management</h1>
-          <p className="text-sm text-muted">Manage your plan, billing cycle, and coin balance.</p>
+          <p className="text-sm text-muted">Manage your plan, billing cycle, and credit balance.</p>
         </div>
         <Link href="/subscription/topup">
           <Button variant="secondary" className="gap-2">
-            <Coins className="size-4" strokeWidth={2} /> Top Up Coins
+            <Coins className="size-4" strokeWidth={2} /> Top Up Credits
           </Button>
         </Link>
       </div>
@@ -78,7 +87,15 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
               <CreditCard className="size-3.5" strokeWidth={2} /> Current Plan
             </span>
             <p className="pt-1 text-xl font-semibold text-ink">
-              {currentPlan.name} <span className="text-sm font-normal text-muted">/ ₹{currentPlan.priceInr.toLocaleString()} per month</span>
+              {currentPlan.name}{" "}
+              <span className="text-sm font-normal text-muted">
+                / ₹
+                {(account.planBillingPeriod === "annual" && currentPlan.annualPriceInr !== null
+                  ? currentPlan.annualPriceInr
+                  : currentPlan.priceInr
+                ).toLocaleString()}{" "}
+                per {account.planBillingPeriod === "annual" ? "year" : "month"}
+              </span>
             </p>
             {account.planExpiresAt && (
               <p className="pt-1 text-sm text-muted">
@@ -88,14 +105,42 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
           </div>
           <div className="flex items-center gap-2 rounded-full bg-accent-soft px-4 py-2">
             <Coins className="size-4 text-accent" strokeWidth={2} />
-            <span className="text-sm font-semibold text-accent-text">{coinBalance.toLocaleString()} coins</span>
+            <span className="text-sm font-semibold text-accent-text">{coinBalance.toLocaleString()} credits</span>
           </div>
         </div>
       )}
 
+      <div className="flex items-center justify-center gap-3">
+        <span className={cn("text-sm font-medium", billingPeriod === "monthly" ? "text-ink" : "text-muted")}>Monthly</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={billingPeriod === "annual"}
+          onClick={() => setBillingPeriod((v) => (v === "annual" ? "monthly" : "annual"))}
+          className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", billingPeriod === "annual" ? "bg-accent" : "bg-border")}
+        >
+          <span
+            className={cn(
+              "absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-soft transition-transform",
+              billingPeriod === "annual" ? "translate-x-5" : "translate-x-0",
+            )}
+          />
+        </button>
+        <span className={cn("text-sm font-medium", billingPeriod === "annual" ? "text-ink" : "text-muted")}>
+          Annual <span className="text-accent-text">(best value)</span>
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan) => {
           const isCurrent = plan.id === account.planId;
+          // Falls back to monthly for any plan with no annual price
+          // configured yet, rather than showing a blank/broken card.
+          const effectivePeriod = billingPeriod === "annual" && plan.annualPriceInr !== null ? "annual" : "monthly";
+          const displayPrice = effectivePeriod === "annual" ? plan.annualPriceInr! : plan.priceInr;
+          const savingsPct =
+            effectivePeriod === "annual" ? annualSavingsPct(plan.priceInr, plan.annualPriceInr!) : 0;
+
           return (
             <div
               key={plan.id}
@@ -114,12 +159,20 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
                 <p className="pt-1 text-sm text-muted">{planDescription(plan.name)}</p>
               </div>
               <div className="text-3xl font-semibold text-ink">
-                ₹{plan.priceInr.toLocaleString()}
-                <span className="text-sm font-normal text-muted">/mo</span>
+                ₹{displayPrice.toLocaleString()}
+                <span className="text-sm font-normal text-muted">{effectivePeriod === "annual" ? "/yr" : "/mo"}</span>
               </div>
+              {billingPeriod === "annual" && effectivePeriod === "annual" && savingsPct > 0 && (
+                <span className="w-fit rounded-full bg-success-bg px-2.5 py-0.5 text-xs font-semibold text-success-text">
+                  Save {savingsPct}% vs monthly
+                </span>
+              )}
+              {billingPeriod === "annual" && effectivePeriod === "monthly" && (
+                <span className="text-xs text-muted">Annual billing not available for this plan yet</span>
+              )}
               <ul className="flex flex-col gap-2 text-sm text-ink">
                 <li className="flex items-center gap-2">
-                  <Check className="size-4 text-success-text" strokeWidth={2.5} /> {plan.coinsIncluded.toLocaleString()} Coins / month
+                  <Check className="size-4 text-success-text" strokeWidth={2.5} /> {plan.coinsIncluded.toLocaleString()} Credits / month
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="size-4 text-success-text" strokeWidth={2.5} />
@@ -139,7 +192,7 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
                 variant={isCurrent ? "secondary" : "primary"}
                 disabled={isCurrent}
                 className="mt-auto w-full"
-                onClick={() => setPendingPlan(plan)}
+                onClick={() => setPendingPlan({ plan, billingPeriod: effectivePeriod })}
               >
                 {isCurrent
                   ? "Active Plan"
@@ -155,14 +208,16 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
       <Modal
         open={!!pendingPlan}
         onClose={() => !confirming && setPendingPlan(null)}
-        title={pendingPlan ? `Switch to ${pendingPlan.name}?` : ""}
+        title={pendingPlan ? `Switch to ${pendingPlan.plan.name}?` : ""}
         footer={
           <>
             <Button variant="secondary" disabled={confirming} onClick={() => setPendingPlan(null)}>
               Cancel
             </Button>
             <Button loading={confirming} onClick={confirmPlanSwitch}>
-              {confirming ? "Processing..." : "Confirm & Pay"}
+              {confirming
+                ? "Processing..."
+                : `Confirm & Pay ₹${(pendingPlan?.billingPeriod === "annual" ? pendingPlan.plan.annualPriceInr! : pendingPlan?.plan.priceInr ?? 0).toLocaleString()}`}
             </Button>
           </>
         }
@@ -171,8 +226,10 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
           <div className="flex flex-col gap-3">
             {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
             <p className="text-sm text-muted">
-              You&apos;ll be redirected to a secure payment page to pay ₹{pendingPlan.priceInr.toLocaleString()}, and your
-              coin allotment will change to {pendingPlan.coinsIncluded.toLocaleString()} coins per billing cycle.
+              You&apos;ll be redirected to a secure payment page to pay ₹
+              {(pendingPlan.billingPeriod === "annual" ? pendingPlan.plan.annualPriceInr! : pendingPlan.plan.priceInr).toLocaleString()}{" "}
+              billed {pendingPlan.billingPeriod}, and your credit allotment will change to{" "}
+              {pendingPlan.plan.coinsIncluded.toLocaleString()} credits per billing cycle.
             </p>
           </div>
         )}

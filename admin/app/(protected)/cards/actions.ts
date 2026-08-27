@@ -3,40 +3,47 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
 import { adminCardsRepo } from "../../../lib/repositories/adminCards.repo";
-import { reExtractCardFromImageUrl } from "../../../lib/vision";
+import { reExtractCardFromImageUrl, ExtractionProvider } from "../../../lib/vision";
 import { writeAuditLog } from "../../../lib/auditLog";
 
-function flattenAddress(address: Record<string, string> | undefined): string | null {
-  if (!address) return null;
-  const parts = [address.street, address.city, address.state, address.postal_code, address.country].filter(
-    (part) => part && part.trim().length > 0,
+// Mirrors visitingCards.repo.ts#joinLines on the server side — dedupes and
+// newline-joins a repeatable extracted field into the one column it's
+// stored in (a card can have more than one phone/email/address, see
+// admin/lib/vision.ts's prompt).
+function joinLines(values: unknown): string | null {
+  if (!Array.isArray(values)) return null;
+  const cleaned = Array.from(
+    new Set(values.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter((v) => v.length > 0)),
   );
-  return parts.length > 0 ? parts.join(", ") : null;
+  return cleaned.length > 0 ? cleaned.join("\n") : null;
 }
 
-export async function rerunExtractionAction(cardId: string): Promise<void> {
+export async function rerunExtractionAction(cardId: string, provider: ExtractionProvider, model: string): Promise<void> {
   const admin = await requireAdmin();
   const card = await adminCardsRepo.getCardById(cardId);
   if (!card) throw new Error("Card not found.");
   if (!card.image_public_url) throw new Error("This card has no stored image to re-run.");
 
-  const extracted = await reExtractCardFromImageUrl(card.image_public_url);
+  const extracted = await reExtractCardFromImageUrl(card.image_public_url, provider, model);
   const socialMedia = (extracted.social_media as Record<string, string>) ?? {};
 
   await adminCardsRepo.updateExtractedFields(cardId, {
     full_name: (extracted.person_name as string) || null,
     position: (extracted.job_title as string) || null,
     company_name: (extracted.company_name as string) || null,
-    address: flattenAddress(extracted.address as Record<string, string>),
-    phone1: (extracted.primary_phone as string) || null,
-    phone2: (extracted.secondary_phone as string) || null,
-    business_email: (extracted.primary_email as string) || null,
-    personal_email: (extracted.secondary_email as string) || null,
-    website: (extracted.website as string) || null,
+    address: joinLines(extracted.addresses),
+    phone1: joinLines(extracted.phones),
+    business_email: joinLines(extracted.business_emails),
+    personal_email: joinLines(extracted.personal_emails),
+    website: joinLines(extracted.websites),
     linkedin: socialMedia.linkedin || null,
     twitter: socialMedia.twitter || null,
     facebook: socialMedia.facebook || null,
+    qr_code_content: (extracted.qr_code_content as string) || null,
+    additional_info: (extracted.additional_info as string) || null,
     extraction_confidence: typeof extracted.confidence === "number" ? extracted.confidence : null,
+    extraction_provider: provider,
+    extraction_model: model,
   });
 
   await writeAuditLog({
@@ -44,6 +51,7 @@ export async function rerunExtractionAction(cardId: string): Promise<void> {
     action: "card.rerun_extraction",
     targetTable: "visiting_cards",
     targetId: cardId,
+    detail: { provider, model },
   });
 
   revalidatePath("/cards");
@@ -63,6 +71,8 @@ export interface CardFieldsPatch {
   twitter?: string | null;
   facebook?: string | null;
   instagram?: string | null;
+  qr_code_content?: string | null;
+  additional_info?: string | null;
   transcribed_note?: string | null;
 }
 

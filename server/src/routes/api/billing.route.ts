@@ -69,7 +69,11 @@ function buildReturnUrl(kind: "topup" | "subscribe", returnTo: "whatsapp" | "tel
   return `${env.PUBLIC_BASE_URL}/${kind}/status?returnTo=${returnTo}`;
 }
 
-const subscribeSchema = z.object({ planId: z.string(), returnTo: returnToSchema });
+const subscribeSchema = z.object({
+  planId: z.string(),
+  billingPeriod: z.enum(["monthly", "annual"]).default("monthly"),
+  returnTo: returnToSchema,
+});
 
 billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
   const body = parseBody(subscribeSchema, req, res);
@@ -85,10 +89,16 @@ billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
+    if (body.billingPeriod === "annual" && plan.annual_price_inr === null) {
+      res.status(400).json({ error: "annual_billing_not_available" });
+      return;
+    }
+    const amountInr = body.billingPeriod === "annual" ? plan.annual_price_inr! : plan.price_inr;
+
     const account = req.account!;
     const link = await cashfreeClient.createPaymentLink({
-      amountInr: plan.price_inr,
-      purpose: `CardPing ${plan.name} plan`,
+      amountInr,
+      purpose: `CardPing ${plan.name} plan (${body.billingPeriod})`,
       phoneNumber: customerPhone(account.mobile),
       customerEmail: account.email ?? undefined,
       notifyUrl: `${env.PUBLIC_BASE_URL}/webhooks/cashfree`,
@@ -98,8 +108,9 @@ billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
       accountId: account.id,
       type: "subscription_payment",
       coins: plan.coins_included,
-      amountInr: plan.price_inr,
+      amountInr,
       planId: plan.id,
+      billingPeriod: body.billingPeriod,
       cashfreeLinkId: link.linkId,
     });
     res.json({ paymentLinkUrl: link.linkUrl });

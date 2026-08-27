@@ -48,7 +48,7 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
         <Link href="/subscription" className="text-sm text-muted hover:text-ink">
           &larr; Subscription
         </Link>
-        <h1 className="pt-1 text-[28px] font-semibold tracking-tight text-ink">Top Up Coins</h1>
+        <h1 className="pt-1 text-[28px] font-semibold tracking-tight text-ink">Top Up Credits</h1>
         <p className="text-sm text-muted">Need more scans right now? Top up without changing your plan.</p>
       </div>
 
@@ -58,7 +58,7 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
         </span>
         <div>
           <p className="text-xs text-muted">Current balance</p>
-          <p className="text-lg font-semibold text-ink">{coinBalance.toLocaleString()} coins</p>
+          <p className="text-lg font-semibold text-ink">{coinBalance.toLocaleString()} credits</p>
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
             )}
             <Coins className="size-6 text-accent" strokeWidth={1.75} />
             <div className="text-2xl font-semibold text-ink">{pkg.coins.toLocaleString()}</div>
-            <div className="text-xs text-muted">coins</div>
+            <div className="text-xs text-muted">credits</div>
             <div className="text-lg font-semibold text-ink">₹{pkg.priceInr.toLocaleString()}</div>
             <Button variant={pkg.popular ? "primary" : "secondary"} className="w-full" onClick={() => setPendingTopUp(pkg)}>
               Buy
@@ -90,7 +90,7 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
       <Modal
         open={!!pendingTopUp}
         onClose={() => !paying && setPendingTopUp(null)}
-        title={pendingTopUp ? `Buy ${pendingTopUp.coins.toLocaleString()} coins` : ""}
+        title={pendingTopUp ? `Buy ${pendingTopUp.coins.toLocaleString()} credits` : ""}
         footer={
           <>
             <Button variant="secondary" disabled={paying} onClick={() => setPendingTopUp(null)}>
@@ -107,7 +107,7 @@ export function TopUpClient({ account, topUps }: { account: Account; topUps: Top
             {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
             <p className="text-sm text-muted">
               You&apos;ll be redirected to a secure payment page to pay ₹{pendingTopUp.priceInr.toLocaleString()}. Once
-              paid, {pendingTopUp.coins.toLocaleString()} coins will be added to your balance.
+              paid, {pendingTopUp.coins.toLocaleString()} credits will be added to your balance.
             </p>
           </div>
         )}

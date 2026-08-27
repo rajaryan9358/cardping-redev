@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Download, Eye, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Download, Eye, Globe, Mail, Pencil, Phone, RefreshCw, Trash2, X } from "lucide-react";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
@@ -12,11 +13,14 @@ import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
 import { cn } from "@/lib/cn";
+import { ChannelIcon } from "@/components/ChannelIcon";
 import { AdminCardRow } from "../../../lib/repositories/adminCards.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDateTime } from "../../../lib/format";
-import { rerunExtractionAction, deleteCardAction, bulkDeleteCardsAction } from "./actions";
+import { saveListNavState, restoreListScroll } from "../../../lib/listNavState";
+import { deleteCardAction, bulkDeleteCardsAction } from "./actions";
 import { EditCardModal } from "./EditCardModal";
+import { RerunExtractionModal } from "./RerunExtractionModal";
 
 const CONFIDENCE_OPTIONS = [
   { label: "≤50%", value: "0.5" },
@@ -27,6 +31,57 @@ const CONFIDENCE_OPTIONS = [
   { label: "All", value: "1" },
 ] as const;
 
+// Rows below this are flagged with a warning icon regardless of which
+// confidence filter tab is active — so a low-confidence card doesn't get
+// lost when "All" is selected.
+const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+const AVAILABILITY_OPTIONS = [
+  { key: "hasWhatsapp" as const, label: "WhatsApp" },
+  { key: "hasEmail" as const, label: "Email" },
+  { key: "hasPhone" as const, label: "Phone" },
+  { key: "hasWebsite" as const, label: "Website" },
+];
+
+/** At-a-glance contact-method availability — one small icon per field the
+ * card actually has, so which leads are actually reachable (and how) is
+ * visible without opening each one. hasWhatsapp and hasPhone both read
+ * card.phone1 (there's no separate "this number is WhatsApp" field on a
+ * scanned card) but get their own icon since they represent different
+ * actions (chat vs. call). */
+function AvailabilityIcons({ card }: { card: AdminCardRow }) {
+  const hasPhone = !!card.phone1;
+  const hasEmail = !!(card.business_email || card.personal_email);
+  const hasWebsite = !!card.website;
+
+  if (!hasPhone && !hasEmail && !hasWebsite) return <span className="text-muted">—</span>;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {hasPhone && (
+        <span title="WhatsApp available">
+          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={14} height={14} />
+        </span>
+      )}
+      {hasPhone && (
+        <span title="Phone available">
+          <Phone className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+      {hasEmail && (
+        <span title="Email available">
+          <Mail className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+      {hasWebsite && (
+        <span title="Website available">
+          <Globe className="size-3.5 text-muted-2" strokeWidth={2} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function CardsTable({
   rows,
   total,
@@ -35,6 +90,10 @@ export function CardsTable({
   maxConfidence,
   sort,
   search,
+  hasWhatsapp,
+  hasEmail,
+  hasPhone,
+  hasWebsite,
   userFilterName,
   eventFilterName,
 }: {
@@ -45,19 +104,41 @@ export function CardsTable({
   maxConfidence: number;
   sort: string;
   search: string;
+  hasWhatsapp: boolean;
+  hasEmail: boolean;
+  hasPhone: boolean;
+  hasWebsite: boolean;
   userFilterName: string | null;
   eventFilterName: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [rerunning, setRerunning] = useState<string | null>(null);
+  const [rerunTarget, setRerunTarget] = useState<AdminCardRow | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editTarget, setEditTarget] = useState<AdminCardRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminCardRow | "bulk" | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  function navigate(next: { page?: number; maxConfidence?: string; sort?: string; search?: string }) {
+  // Restores scroll position if this exact filtered/paged URL is the one
+  // the user was last on before clicking into a card's detail page — see
+  // lib/listNavState.ts.
+  useEffect(() => {
+    restoreListScroll(pathname, searchParams.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function navigate(next: {
+    page?: number;
+    pageSize?: number;
+    maxConfidence?: string;
+    sort?: string;
+    search?: string;
+    hasWhatsapp?: boolean;
+    hasEmail?: boolean;
+    hasPhone?: boolean;
+    hasWebsite?: boolean;
+  }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.maxConfidence !== undefined) {
       params.set("maxConfidence", next.maxConfidence);
@@ -70,22 +151,23 @@ export function CardsTable({
     if (next.sort !== undefined) {
       next.sort ? params.set("sort", next.sort) : params.delete("sort");
     }
+    if (next.pageSize !== undefined) {
+      params.set("pageSize", String(next.pageSize));
+      params.set("page", "1");
+    }
+    for (const key of ["hasWhatsapp", "hasEmail", "hasPhone", "hasWebsite"] as const) {
+      if (next[key] !== undefined) {
+        next[key] ? params.set(key, "true") : params.delete(key);
+        params.set("page", "1");
+      }
+    }
     if (next.page !== undefined) params.set("page", String(next.page));
+    saveListNavState(pathname, params.toString());
     // Hard navigation, not router.push: a soft nav to a URL visited earlier
     // this session would instantly repaint whatever Next's client Router
     // Cache last had for it — stale confidence-filtered rows included —
     // before router.refresh() gets a chance to correct it a moment later.
     window.location.href = `/admin${pathname}?${params.toString()}`;
-  }
-
-  async function handleRerun(cardId: string) {
-    setRerunning(cardId);
-    try {
-      await rerunExtractionAction(cardId);
-      router.refresh();
-    } finally {
-      setRerunning(null);
-    }
   }
 
   function toggle(id: string) {
@@ -182,22 +264,48 @@ export function CardsTable({
         </a>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-semibold tracking-wide text-muted-2">Confidence at or below</span>
-        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-          {CONFIDENCE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => navigate({ maxConfidence: opt.value })}
-              className={cn(
-                "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                String(maxConfidence) === opt.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
+      <div className="flex flex-wrap gap-6">
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Confidence at or below</span>
+          <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
+            {CONFIDENCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => navigate({ maxConfidence: opt.value })}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  String(maxConfidence) === opt.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Has</span>
+          <div className="flex flex-wrap gap-1.5">
+            {AVAILABILITY_OPTIONS.map((opt) => {
+              const active = { hasWhatsapp, hasEmail, hasPhone, hasWebsite }[opt.key];
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => navigate({ [opt.key]: !active })}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                    active
+                      ? "border-accent bg-accent-soft text-accent-text"
+                      : "border-border bg-surface-warm text-muted hover:text-ink",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -214,6 +322,7 @@ export function CardsTable({
           <Th>Card</Th>
           <Th>Scanned by</Th>
           <Th>Channel</Th>
+          <Th>Availability</Th>
           <SortableTh field="extraction_confidence" label="Confidence" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
           <SortableTh field="created_at" label="Scanned" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
           <Th align="right">Actions</Th>
@@ -232,15 +341,29 @@ export function CardsTable({
               />
             </Td>
             <Td>
-              <Link href={`/cards/${card.id}`} className="font-medium text-ink hover:underline">
+              <Link
+                href={`/cards/${card.id}`}
+                onClick={() => saveListNavState(pathname, searchParams.toString())}
+                className="font-medium text-ink hover:underline"
+              >
                 {card.full_name || "—"}
               </Link>
               <div className="text-xs text-muted">{card.company_name || "—"}</div>
             </Td>
             <Td>{card.user?.full_name || card.user?.email || "—"}</Td>
-            <Td className="capitalize">{card.uploaded_by || "—"}</Td>
+            <Td>
+              <ChannelIcon channel={card.uploaded_by} />
+            </Td>
+            <Td>
+              <AvailabilityIcons card={card} />
+            </Td>
             <Td align="right">
-              {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
+              <span className="inline-flex items-center justify-end gap-1.5">
+                {card.extraction_confidence !== null && card.extraction_confidence < LOW_CONFIDENCE_THRESHOLD && (
+                  <AlertTriangle className="size-3.5 text-warning-text" strokeWidth={2} aria-label="Low confidence" />
+                )}
+                {card.extraction_confidence !== null ? `${Math.round(card.extraction_confidence * 100)}%` : "—"}
+              </span>
             </Td>
             <Td align="right">{formatDateTime(card.created_at)}</Td>
             <Td align="right">
@@ -250,13 +373,15 @@ export function CardsTable({
                     {
                       label: "View",
                       icon: <Eye className="size-3.5" strokeWidth={2} />,
-                      onClick: () => (window.location.href = `/admin/cards/${card.id}`),
+                      onClick: () => {
+                        saveListNavState(pathname, searchParams.toString());
+                        window.location.href = `/admin/cards/${card.id}`;
+                      },
                     },
                     {
-                      label: rerunning === card.id ? "Re-running…" : "Re-run extraction",
+                      label: "Re-run extraction",
                       icon: <RefreshCw className="size-3.5" strokeWidth={2} />,
-                      onClick: () => handleRerun(card.id),
-                      disabled: rerunning === card.id,
+                      onClick: () => setRerunTarget(card),
                     },
                     { label: "Edit", icon: <Pencil className="size-3.5" strokeWidth={2} />, onClick: () => setEditTarget(card) },
                     {
@@ -277,10 +402,20 @@ export function CardsTable({
           totalItems={total}
           pageSize={pageSize}
           onPageChange={(p) => navigate({ page: p })}
+          onPageSizeChange={(size) => navigate({ pageSize: size })}
         />
       </TableCard>
 
       <EditCardModal target={editTarget} onClose={() => setEditTarget(null)} />
+
+      <RerunExtractionModal
+        card={rerunTarget}
+        onClose={() => setRerunTarget(null)}
+        onDone={() => {
+          setRerunTarget(null);
+          router.refresh();
+        }}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

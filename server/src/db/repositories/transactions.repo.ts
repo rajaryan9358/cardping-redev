@@ -30,6 +30,7 @@ async function createPendingAccountPurchase(input: {
   coins: number;
   amountInr: number;
   planId: string | null;
+  billingPeriod?: "monthly" | "annual" | null;
   cashfreeLinkId: string;
 }): Promise<Transaction> {
   const { data, error } = await supabase
@@ -40,6 +41,7 @@ async function createPendingAccountPurchase(input: {
       coins: input.coins,
       amount_inr: input.amountInr,
       plan_id: input.planId,
+      billing_period: input.billingPeriod ?? null,
       status: "pending",
       cashfree_link_id: input.cashfreeLinkId,
     })

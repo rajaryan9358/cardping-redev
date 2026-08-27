@@ -16,7 +16,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 eventsRouter.get("/events", requireSession, requireActivePlanOrTrial, async (req, res) => {
   try {
     const usersIds = await resolveUsersIds(req.account!.id);
-    const events = await eventsRepo.listForAccount(usersIds);
+    const query = typeof req.query.q === "string" ? req.query.q : undefined;
+    const events = await eventsRepo.listForAccount(usersIds, query);
     const withLeadCounts = await Promise.all(
       events.map(async (event) => ({ ...event, leadCount: await eventsRepo.countCardsForEvent(event.id, usersIds) })),
     );
@@ -30,6 +31,8 @@ eventsRouter.get("/events", requireSession, requireActivePlanOrTrial, async (req
 const createSchema = z.object({
   name: z.string().min(1),
   location: z.string().nullable().optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
   eventDate: z.string().nullable().optional(),
 });
 
@@ -51,6 +54,8 @@ eventsRouter.post("/events", requireSession, requireActivePlanOrTrial, async (re
     const event = await eventsRepo.createForUsersId(usersIds[0], {
       name: body.name,
       location: body.location,
+      lat: body.lat,
+      lng: body.lng,
       event_date: body.eventDate,
     });
     res.json({ event: { ...event, leadCount: 0 } });
@@ -63,6 +68,8 @@ eventsRouter.post("/events", requireSession, requireActivePlanOrTrial, async (re
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   location: z.string().nullable().optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
   eventDate: z.string().nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
 });
@@ -76,6 +83,8 @@ eventsRouter.patch("/events/:id", requireSession, requireActivePlanOrTrial, asyn
     const event = await eventsRepo.updateForAccount(req.params.id, usersIds, {
       name: body.name,
       location: body.location,
+      lat: body.lat,
+      lng: body.lng,
       event_date: body.eventDate,
       status: body.status,
     });

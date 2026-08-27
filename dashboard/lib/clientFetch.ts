@@ -14,6 +14,14 @@ export async function clientFetch(path: string, init?: RequestInit): Promise<Res
   });
 }
 
+/** Same as clientFetch, minus the forced `Content-Type: application/json`
+ * — needed for a FormData body (e.g. a voice note upload), where the
+ * browser must set its own multipart boundary; setting Content-Type by
+ * hand would strip it and the server couldn't parse the body. */
+export async function clientFetchRaw(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(path, { ...init, credentials: "include" });
+}
+
 export interface ApiError {
   error: string;
   issues?: string[];

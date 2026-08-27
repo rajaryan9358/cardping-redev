@@ -3,7 +3,7 @@
 import { Shield } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { TextField } from "@/components/ui/TextField";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { clientFetch, parseJsonOrThrow } from "@/lib/clientFetch";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -62,23 +62,22 @@ export function PasswordForm() {
       </h2>
       {error && <p className="mb-4 max-w-sm rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
       <form onSubmit={handleSubmit} className="flex max-w-sm flex-col gap-4">
-        <TextField
+        <PasswordField
           label="Current Password"
-          type="password"
+          placeholder="Your current password"
           required
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
         />
-        <TextField
+        <PasswordField
           label="New Password"
-          type="password"
           required
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
         />
-        <TextField
+        <PasswordField
           label="Confirm New Password"
-          type="password"
+          placeholder="Re-enter new password"
           required
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
