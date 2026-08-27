@@ -32,12 +32,6 @@ function mapEvent(e: ServerEvent): EventRecord {
   };
 }
 
-/** "Upcoming" isn't a stored status — it's an active event whose date
- * hasn't arrived yet. Used for display badges/filters only. */
-export function isEventUpcoming(event: Pick<EventRecord, "activeStatus" | "eventDate">): boolean {
-  return event.activeStatus === "active" && !!event.eventDate && new Date(event.eventDate) > new Date();
-}
-
 export async function getEvents(query?: string): Promise<EventRecord[]> {
   const params = query ? `?q=${encodeURIComponent(query)}` : "";
   const res = await serverFetch(`/api/events${params}`);

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { cn } from "@/lib/cn";
-import { isEventUpcoming } from "@/lib/data/events";
+import { isEventUpcoming } from "@/lib/eventStatus";
 import { EventRecord } from "@/lib/types";
 
 type FilterTab = "all" | "active" | "upcoming" | "inactive";

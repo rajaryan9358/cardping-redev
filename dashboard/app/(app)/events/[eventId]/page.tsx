@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { ScansExplorer } from "@/components/scans/ScansExplorer";
 import { allTags, getCards } from "@/lib/data/cards";
-import { getEvent, getEvents, isEventUpcoming } from "@/lib/data/events";
+import { getEvent, getEvents } from "@/lib/data/events";
+import { isEventUpcoming } from "@/lib/eventStatus";
 import { EventMap } from "@/components/events/EventMap";
 
 // This frame's own Figma draft drew a different sidebar — deliberately
