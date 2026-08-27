@@ -4,7 +4,10 @@ export interface PlanRow {
   id: string;
   name: string;
   price_inr: number;
-  annual_price_inr: number | null;
+  // Discounted per-month rate under annual billing — NOT the total charged
+  // for the year. The actual one-time charge is this × 12, computed where
+  // it's charged (billing.route.ts), never stored as its own total.
+  annual_monthly_price_inr: number | null;
   period_days: number;
   coins_included: number;
   description: string | null;
@@ -12,7 +15,7 @@ export interface PlanRow {
   is_active: boolean;
 }
 
-const PLAN_COLUMNS = "id, name, price_inr, annual_price_inr, period_days, coins_included, description, benefits, is_active";
+const PLAN_COLUMNS = "id, name, price_inr, annual_monthly_price_inr, period_days, coins_included, description, benefits, is_active";
 
 async function listActive(): Promise<PlanRow[]> {
   const { data, error } = await supabase.from("plans").select(PLAN_COLUMNS).eq("is_active", true).order("price_inr", { ascending: true });

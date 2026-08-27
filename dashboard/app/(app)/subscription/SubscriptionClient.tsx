@@ -26,10 +26,13 @@ function planDescription(name: string): string {
   return "Custom solutions for large scale operations.";
 }
 
-function annualSavingsPct(monthly: number, annual: number): number {
-  const fullYearAtMonthlyRate = monthly * 12;
-  if (fullYearAtMonthlyRate <= 0) return 0;
-  return Math.round(((fullYearAtMonthlyRate - annual) / fullYearAtMonthlyRate) * 100);
+// Both args are per-month rates (annualMonthlyRate is the discounted rate
+// under annual billing) — the ×12 that converts either to a yearly total
+// cancels out of the percentage, so this compares the monthly rates
+// directly rather than needing to multiply both out first.
+function annualSavingsPct(monthlyRate: number, annualMonthlyRate: number): number {
+  if (monthlyRate <= 0) return 0;
+  return Math.round(((monthlyRate - annualMonthlyRate) / monthlyRate) * 100);
 }
 
 export function SubscriptionClient({ account, plans }: { account: Account; plans: Plan[] }) {
@@ -90,13 +93,18 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
               {currentPlan.name}{" "}
               <span className="text-sm font-normal text-muted">
                 / ₹
-                {(account.planBillingPeriod === "annual" && currentPlan.annualPriceInr !== null
-                  ? currentPlan.annualPriceInr
+                {(account.planBillingPeriod === "annual" && currentPlan.annualMonthlyPriceInr !== null
+                  ? currentPlan.annualMonthlyPriceInr
                   : currentPlan.priceInr
                 ).toLocaleString()}{" "}
-                per {account.planBillingPeriod === "annual" ? "year" : "month"}
+                per month{account.planBillingPeriod === "annual" ? " (billed annually)" : ""}
               </span>
             </p>
+            {account.planBillingPeriod === "annual" && currentPlan.annualMonthlyPriceInr !== null && (
+              <p className="pt-0.5 text-xs text-muted">
+                Billed ₹{(currentPlan.annualMonthlyPriceInr * 12).toLocaleString()} up front for the year.
+              </p>
+            )}
             {account.planExpiresAt && (
               <p className="pt-1 text-sm text-muted">
                 Next billing date: {new Date(account.planExpiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -136,10 +144,14 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
           const isCurrent = plan.id === account.planId;
           // Falls back to monthly for any plan with no annual price
           // configured yet, rather than showing a blank/broken card.
-          const effectivePeriod = billingPeriod === "annual" && plan.annualPriceInr !== null ? "annual" : "monthly";
-          const displayPrice = effectivePeriod === "annual" ? plan.annualPriceInr! : plan.priceInr;
+          const effectivePeriod = billingPeriod === "annual" && plan.annualMonthlyPriceInr !== null ? "annual" : "monthly";
+          // Always a per-month rate, whichever period is in effect — annual
+          // billing shows its own (discounted) monthly-equivalent rate, not
+          // a year's total, so the two cards stay visually comparable.
+          const displayMonthlyPrice = effectivePeriod === "annual" ? plan.annualMonthlyPriceInr! : plan.priceInr;
+          const annualTotalPrice = effectivePeriod === "annual" ? plan.annualMonthlyPriceInr! * 12 : null;
           const savingsPct =
-            effectivePeriod === "annual" ? annualSavingsPct(plan.priceInr, plan.annualPriceInr!) : 0;
+            effectivePeriod === "annual" ? annualSavingsPct(plan.priceInr, plan.annualMonthlyPriceInr!) : 0;
 
           return (
             <div
@@ -159,9 +171,12 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
                 <p className="pt-1 text-sm text-muted">{planDescription(plan.name)}</p>
               </div>
               <div className="text-3xl font-semibold text-ink">
-                ₹{displayPrice.toLocaleString()}
-                <span className="text-sm font-normal text-muted">{effectivePeriod === "annual" ? "/yr" : "/mo"}</span>
+                ₹{displayMonthlyPrice.toLocaleString()}
+                <span className="text-sm font-normal text-muted">/mo</span>
               </div>
+              {annualTotalPrice !== null && (
+                <span className="text-xs text-muted">billed ₹{annualTotalPrice.toLocaleString()} / year</span>
+              )}
               {billingPeriod === "annual" && effectivePeriod === "annual" && savingsPct > 0 && (
                 <span className="w-fit rounded-full bg-success-bg px-2.5 py-0.5 text-xs font-semibold text-success-text">
                   Save {savingsPct}% vs monthly
@@ -217,7 +232,11 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
             <Button loading={confirming} onClick={confirmPlanSwitch}>
               {confirming
                 ? "Processing..."
-                : `Confirm & Pay ₹${(pendingPlan?.billingPeriod === "annual" ? pendingPlan.plan.annualPriceInr! : pendingPlan?.plan.priceInr ?? 0).toLocaleString()}`}
+                : `Confirm & Pay ₹${(
+                    pendingPlan?.billingPeriod === "annual"
+                      ? pendingPlan.plan.annualMonthlyPriceInr! * 12
+                      : (pendingPlan?.plan.priceInr ?? 0)
+                  ).toLocaleString()}`}
             </Button>
           </>
         }
@@ -226,10 +245,22 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
           <div className="flex flex-col gap-3">
             {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
             <p className="text-sm text-muted">
-              You&apos;ll be redirected to a secure payment page to pay ₹
-              {(pendingPlan.billingPeriod === "annual" ? pendingPlan.plan.annualPriceInr! : pendingPlan.plan.priceInr).toLocaleString()}{" "}
-              billed {pendingPlan.billingPeriod}, and your credit allotment will change to{" "}
-              {pendingPlan.plan.coinsIncluded.toLocaleString()} credits per billing cycle.
+              {pendingPlan.billingPeriod === "annual" ? (
+                <>
+                  You&apos;ll be redirected to a secure payment page to pay{" "}
+                  <strong className="text-ink">
+                    ₹{(pendingPlan.plan.annualMonthlyPriceInr! * 12).toLocaleString()}
+                  </strong>{" "}
+                  once, up front — 12 months at ₹{pendingPlan.plan.annualMonthlyPriceInr!.toLocaleString()}/mo.
+                </>
+              ) : (
+                <>
+                  You&apos;ll be redirected to a secure payment page to pay ₹{pendingPlan.plan.priceInr.toLocaleString()}{" "}
+                  billed monthly.
+                </>
+              )}{" "}
+              Your credit allotment will change to {pendingPlan.plan.coinsIncluded.toLocaleString()} credits per billing
+              cycle.
             </p>
           </div>
         )}

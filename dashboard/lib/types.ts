@@ -105,7 +105,10 @@ export interface Plan {
   id: string;
   name: string;
   priceInr: number;
-  annualPriceInr: number | null;
+  // Discounted per-month rate under annual billing — NOT the year's total.
+  // The one-time charge for a year is this × 12 (computed wherever it's
+  // actually charged/displayed as a total, never stored as its own field).
+  annualMonthlyPriceInr: number | null;
   periodDays: number;
   coinsIncluded: number;
   isCurrent: boolean;

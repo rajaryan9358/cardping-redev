@@ -1,9 +1,12 @@
 import { Plan, Transaction } from "../types";
 
+// annualMonthlyPriceInr is the discounted PER-MONTH rate under annual
+// billing, not the year's total — matches the real values already seeded
+// in production (a customer pays this × 12 once, up front).
 export const mockPlans: Plan[] = [
-  { id: "plan_starter", name: "Starter", priceInr: 999, annualPriceInr: 9990, periodDays: 30, coinsIncluded: 200, isCurrent: false },
-  { id: "plan_professional", name: "Professional", priceInr: 2499, annualPriceInr: 24990, periodDays: 30, coinsIncluded: 750, isCurrent: true },
-  { id: "plan_enterprise", name: "Enterprise", priceInr: 5999, annualPriceInr: 59990, periodDays: 30, coinsIncluded: 2000, isCurrent: false },
+  { id: "plan_starter", name: "Starter", priceInr: 999, annualMonthlyPriceInr: 799, periodDays: 30, coinsIncluded: 200, isCurrent: false },
+  { id: "plan_professional", name: "Professional", priceInr: 2499, annualMonthlyPriceInr: 2199, periodDays: 30, coinsIncluded: 750, isCurrent: true },
+  { id: "plan_enterprise", name: "Enterprise", priceInr: 5999, annualMonthlyPriceInr: 4999, periodDays: 30, coinsIncluded: 2000, isCurrent: false },
 ];
 
 export const mockTransactions: Transaction[] = [

@@ -9,7 +9,7 @@ interface ServerPlan {
   id: string;
   name: string;
   price_inr: number;
-  annual_price_inr: number | null;
+  annual_monthly_price_inr: number | null;
   period_days: number;
   coins_included: number;
   isCurrent: boolean;
@@ -23,7 +23,7 @@ export async function getPlans(): Promise<Plan[]> {
     id: p.id,
     name: p.name,
     priceInr: p.price_inr,
-    annualPriceInr: p.annual_price_inr,
+    annualMonthlyPriceInr: p.annual_monthly_price_inr,
     periodDays: p.period_days,
     coinsIncluded: p.coins_included,
     isCurrent: p.isCurrent,

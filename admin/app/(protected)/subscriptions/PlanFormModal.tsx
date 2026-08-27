@@ -10,7 +10,7 @@ import { createPlanAction, updatePlanAction } from "./actions";
 const EMPTY: PlanInput = {
   name: "",
   price_inr: 0,
-  annual_price_inr: null,
+  annual_monthly_price_inr: null,
   period_days: 30,
   coins_included: 0,
   description: "",
@@ -37,7 +37,7 @@ export function PlanFormModal({
       setForm({
         name: plan.name,
         price_inr: plan.price_inr,
-        annual_price_inr: plan.annual_price_inr,
+        annual_monthly_price_inr: plan.annual_monthly_price_inr,
         period_days: plan.period_days,
         coins_included: plan.coins_included,
         description: plan.description ?? "",
@@ -93,13 +93,21 @@ export function PlanFormModal({
             onChange={(e) => setForm({ ...form, price_inr: Number(e.target.value) })}
           />
           <TextField
-            label="Annual price (₹, optional)"
+            label="Monthly price when billed annually (₹, optional)"
             type="number"
             placeholder="Leave blank to disable annual billing"
-            value={form.annual_price_inr ?? ""}
-            onChange={(e) => setForm({ ...form, annual_price_inr: e.target.value === "" ? null : Number(e.target.value) })}
+            value={form.annual_monthly_price_inr ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, annual_monthly_price_inr: e.target.value === "" ? null : Number(e.target.value) })
+            }
           />
         </div>
+        {form.annual_monthly_price_inr !== null && form.annual_monthly_price_inr > 0 && (
+          <p className="-mt-2 text-xs text-muted">
+            This is a <strong>per-month</strong> rate, not the year's total — a customer choosing annual billing is
+            charged ₹{(form.annual_monthly_price_inr * 12).toLocaleString("en-IN")} once, up front, for 12 months.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <TextField
             label="Period (days)"

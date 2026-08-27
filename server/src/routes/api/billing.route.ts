@@ -89,11 +89,15 @@ billingRouter.post("/billing/subscribe", requireSession, async (req, res) => {
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
-    if (body.billingPeriod === "annual" && plan.annual_price_inr === null) {
+    if (body.billingPeriod === "annual" && plan.annual_monthly_price_inr === null) {
       res.status(400).json({ error: "annual_billing_not_available" });
       return;
     }
-    const amountInr = body.billingPeriod === "annual" ? plan.annual_price_inr! : plan.price_inr;
+    // annual_monthly_price_inr is the discounted PER-MONTH rate under
+    // annual billing, not a stored total — the one-time charge for the
+    // year is that rate × 12, computed here, same as the monthly plan's
+    // own price_inr is charged as-is for one month.
+    const amountInr = body.billingPeriod === "annual" ? plan.annual_monthly_price_inr! * 12 : plan.price_inr;
 
     const account = req.account!;
     const link = await cashfreeClient.createPaymentLink({

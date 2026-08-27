@@ -165,6 +165,22 @@ The last one also backfills: every card's existing single voice note (if it has 
 first row in its new `card_voice_notes` list, so nothing already recorded disappears from the
 dashboard.
 
+**After the last migration, reload PostgREST's schema cache** — applying a migration via `psql`
+changes the real Postgres tables immediately, but the self-hosted PostgREST layer (what
+`supabase-js` actually talks to, in server/, admin/, and dashboard/'s API routes) caches the
+schema and has no way to know new columns/tables exist until told to reload. Skipping this step
+doesn't fail loudly at migration time — it fails later, at request time, as a `PGRST204 Could not
+find the '<column>' column of '<table>' in the schema cache` error on anything that touches a
+newly-added column (this bit login itself on 2026-08-27's deploy — `sessions.location` — a fresh
+column from the very first migration in this batch):
+
+```bash
+docker exec supabase-selfhosted-db-1 psql -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
+```
+
+Confirm it actually reloaded via `docker logs supabase-selfhosted-rest-1 --tail 20` — look for
+"Received a schema cache reload message" followed by a relation count that went *up* from before.
+
 (Adjust the `docker exec`/`psql` invocation to however you've been applying migrations — the
 above assumes running it from a machine with the repo checked out and piping the file in over
 SSH; equally fine to `scp` the files up first and run `psql -f` locally on the VPS.)

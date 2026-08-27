@@ -10,6 +10,23 @@ idempotent (every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / `C
 against the original CardPing database described in `old-project/schema.md`, where it only adds
 what's missing.
 
+**On the self-hosted stack (Postgres + PostgREST via Docker, not hosted Supabase): reload
+PostgREST's schema cache after applying any migration** — `psql` changes the real tables
+immediately, but PostgREST (what `supabase-js` actually talks to, in every app's API routes)
+caches the schema and has no way to know new columns/tables exist until told to reload. Skipped,
+this doesn't fail at migration time — it fails later, at request time, as a `PGRST204 Could not
+find the '<column>' column of '<table>' in the schema cache` error on anything touching a newly
+added column or table (this took down login in production on 2026-08-27 — see
+`docs/PENDING_DEPLOY_2026-08-27.md`'s Step 2 for the incident). Always run this as the last step
+of any migration against this stack:
+
+```bash
+docker exec supabase-selfhosted-db-1 psql -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
+```
+
+Confirm it actually reloaded via `docker logs supabase-selfhosted-rest-1 --tail 20` — look for
+"Received a schema cache reload message" followed by a relation count that went *up* from before.
+
 ## Tables
 
 ### `users`

@@ -6,7 +6,7 @@ export interface Plan {
   id: string;
   name: string;
   price_inr: number;
-  annual_price_inr: number | null;
+  annual_monthly_price_inr: number | null;
   period_days: number;
   coins_included: number;
   is_active: boolean;
@@ -15,7 +15,7 @@ export interface Plan {
 async function listPlans(): Promise<Plan[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("id, name, price_inr, annual_price_inr, period_days, coins_included, is_active")
+    .select("id, name, price_inr, annual_monthly_price_inr, period_days, coins_included, is_active")
     .eq("is_active", true)
     .order("price_inr", { ascending: true });
   if (error) throw error;
@@ -368,7 +368,7 @@ export interface PlanCatalogRow {
   id: string;
   name: string;
   price_inr: number;
-  annual_price_inr: number | null;
+  annual_monthly_price_inr: number | null;
   period_days: number;
   coins_included: number;
   description: string | null;
@@ -382,7 +382,7 @@ export interface PlanInput {
   // Optional — a plan with no annual price set yet just isn't offered as
   // an annual option on the dashboard's billing toggle (it falls back to
   // showing the monthly price for that plan there).
-  annual_price_inr: number | null;
+  annual_monthly_price_inr: number | null;
   period_days: number;
   coins_included: number;
   description: string;
@@ -392,7 +392,7 @@ export interface PlanInput {
 async function listAllPlans(): Promise<PlanCatalogRow[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("id, name, price_inr, annual_price_inr, period_days, coins_included, description, benefits, is_active")
+    .select("id, name, price_inr, annual_monthly_price_inr, period_days, coins_included, description, benefits, is_active")
     .order("price_inr", { ascending: true });
   if (error) throw error;
   return (data ?? []) as PlanCatalogRow[];
@@ -404,7 +404,7 @@ async function createPlan(input: PlanInput): Promise<void> {
     id,
     name: input.name,
     price_inr: input.price_inr,
-    annual_price_inr: input.annual_price_inr,
+    annual_monthly_price_inr: input.annual_monthly_price_inr,
     period_days: input.period_days,
     coins_included: input.coins_included,
     description: input.description || null,
@@ -419,7 +419,7 @@ async function updatePlan(id: string, input: PlanInput): Promise<void> {
     .update({
       name: input.name,
       price_inr: input.price_inr,
-      annual_price_inr: input.annual_price_inr,
+      annual_monthly_price_inr: input.annual_monthly_price_inr,
       period_days: input.period_days,
       coins_included: input.coins_included,
       description: input.description || null,
