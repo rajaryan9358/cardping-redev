@@ -60,7 +60,10 @@ function AvailabilityIcons({ card }: { card: AdminCardRow }) {
     <div className="flex items-center gap-1.5">
       {hasPhone && (
         <span title="WhatsApp available">
-          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={14} height={14} />
+          {/* A filled circle badge reads visually smaller than the adjacent
+              bold-stroke lucide icons at the same nominal pixel size, so
+              this gets a bit more room to look proportionate next to them. */}
+          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={18} height={18} />
         </span>
       )}
       {hasPhone && (

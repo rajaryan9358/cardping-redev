@@ -9,6 +9,32 @@ Once this batch ships, this file has served its purpose — it documents one rel
 ongoing process. Delete it (or move its content into [MIGRATION_NOTES.md](./MIGRATION_NOTES.md))
 once everything below is done and verified in production.
 
+## Deployment log (2026-08-27/28) — what actually happened
+
+This batch shipped. Two real issues turned up during/after the deploy, both now fixed and
+verified live:
+
+1. **Login broke immediately after the first push** (`PGRST204 ... 'location' column ... not
+   found in the schema cache`) — applying migrations via `psql` changed Postgres directly, but
+   the self-hosted PostgREST layer's cached schema didn't know about the new columns/tables until
+   `NOTIFY pgrst, 'reload schema'` was run. Fixed live; this step is now permanently documented in
+   [DATABASE.md](./DATABASE.md) and added to Step 2 below so it can't be skipped again.
+2. **"Current event" was still resolving per-channel, not account-wide, after the deploy** — the
+   `user_with_event` view fix from the channel/account architecture work (see item 5 below) had
+   been sitting correctly in `schema.sql` this whole time but was **never actually applied to
+   production** — this doc's own "One more migration piece — not a new file" section documented
+   the required manual step, and it was skipped during execution. Re-applied live from
+   `schema.sql`'s current definition, followed by `NOTIFY pgrst, 'reload schema'`. Also found (and
+   fixed with a new migration, `2026-08-28_backfill_account_active_event.sql`) that 18 accounts
+   had set their current event *before* this fix ever went live, so they had nothing at the
+   account level to coalesce from and kept showing stale per-channel values — backfilled from each
+   account's most-recently-set per-channel value.
+3. A follow-up billing-correctness fix also shipped in this window — see item 12 below
+   (`annual_price_inr` → `annual_monthly_price_inr`).
+
+Lesson for next time: run the **entire** "Verify" checklist under Step 2 after applying
+migrations, not just the numbered `.sql` files — it would have caught #2 immediately.
+
 ## What's in this batch
 
 Eleven separate pieces of work, all still uncommitted:
@@ -121,6 +147,16 @@ Eleven separate pieces of work, all still uncommitted:
     dropdown alongside the existing Events/Tags ones — applies to the Directory page and any other
     `ScansExplorer` usage (e.g. Home's recent-scans widget) automatically, since it's the same
     shared component. No schema change — reads existing columns only.
+12. **Fixed annual subscription pricing being charged as a one-time total instead of ×12** —
+    `plans.annual_price_inr` (renamed `annual_monthly_price_inr`) was being charged directly by
+    `billing.route.ts`, but admin was entering it — and the dashboard's own "Save X%" math already
+    assumed it was — a discounted PER-MONTH rate under annual billing. Production's real seeded
+    values (999→799, 2499→2199, 5999→4999 — obvious ~15-20% monthly discounts) already matched the
+    intended meaning, so only the column rename + charge computation + every display needed
+    fixing, not the data. The real one-time charge for annual billing is now
+    `annual_monthly_price_inr * 12`; admin's form is relabeled with a live ×12 preview so this
+    can't recur; dashboard shows a per-month rate consistently (matching the monthly plan's own
+    display) with the real yearly total shown alongside.
 
 Run `git status --short` for the exact file list — 100+ modified, 20+ new files as of this writing.
 
@@ -144,9 +180,12 @@ isn't instant, applying the DB migration a minute or two before pushing is the s
 
 ## Step 2 — Apply database migrations, in this exact order
 
-All seven files are additive/idempotent (`create table if not exists`, `add column if not
-exists`, `alter column ... set default`, an `insert ... where not exists` backfill) — safe to
-re-run if you're ever unsure whether one already applied.
+All nine files are additive/idempotent (`create table if not exists`, `add column if not
+exists`, `alter column ... set default`, `rename column` guarded by an existence check, an
+`insert`/`update ... where not exists`/`where ... is null` backfill) — safe to re-run if you're
+ever unsure whether one already applied. **All nine have already been applied to production** as
+of this deploy — this list is kept for reference/rebuilding a fresh environment, not as a
+to-do.
 
 ```bash
 # From your machine, against the VPS's self-hosted Postgres — same pattern
@@ -159,6 +198,8 @@ docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db
 docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db/2026-08-27_fix_coin_starter_double_grant.sql
 docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db/2026-08-27_multiple_voice_notes.sql
 docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db/2026-08-27_extraction_model_tracking.sql
+docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db/2026-08-28_annual_price_semantics_fix.sql
+docker exec -i supabase-selfhosted-db-1 psql -U postgres -d postgres < server/db/2026-08-28_backfill_account_active_event.sql
 ```
 
 The last one also backfills: every card's existing single voice note (if it has one) becomes the
@@ -185,7 +226,7 @@ Confirm it actually reloaded via `docker logs supabase-selfhosted-rest-1 --tail 
 above assumes running it from a machine with the repo checked out and piping the file in over
 SSH; equally fine to `scp` the files up first and run `psql -f` locally on the VPS.)
 
-### One more migration piece — not a new file
+### One more migration piece — not a new file (✅ done — see the incident log above)
 
 **`server/db/schema.sql` has two view definitions changed in place**, both this project's own
 convention (a view has exactly one canonical definition, extended/modified there directly rather
@@ -201,6 +242,15 @@ Neither gets applied by the migration files above on their own — the
 `create or replace view public.user_with_event as ...` statement straight out of
 `server/db/schema.sql` and run it against the same database. `create or replace view` is safe to
 run standalone; it doesn't touch table data.
+
+**This step was missed during the original deploy execution** — `cards_export_view` got applied
+(bundled inside a numbered migration file), but `user_with_event` didn't, since it required this
+separate manual step and that step was skipped. Production ran with the stale pre-fix view for
+several hours, which silently kept "current event" resolving per-channel instead of account-wide
+even though the write side was already fixed. Caught from a user report, re-applied live, and a
+new backfill migration (`2026-08-28_backfill_account_active_event.sql`) corrected the 18 accounts
+that had set an event before the fix ever took effect. See the incident log at the top of this
+file for the full account.
 
 ### Verify
 
