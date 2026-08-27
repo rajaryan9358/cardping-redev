@@ -62,8 +62,15 @@ function AvailabilityIcons({ card }: { card: AdminCardRow }) {
         <span title="WhatsApp available">
           {/* A filled circle badge reads visually smaller than the adjacent
               bold-stroke lucide icons at the same nominal pixel size, so
-              this gets a bit more room to look proportionate next to them. */}
-          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={18} height={18} />
+              this gets a bit more room to look proportionate next to them.
+              shrink-0 is load-bearing, not decorative: Tailwind's Preflight
+              applies max-width:100% to <img> (not <svg>, which is what the
+              lucide icons render as) — in this flex row that lets the
+              browser's flex-shrink algorithm squeeze this <img> down to a
+              few px regardless of the width/height props, since it has no
+              well-defined min-content floor the way the sibling <svg>
+              icons do. */}
+          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={18} height={18} className="shrink-0" />
         </span>
       )}
       {hasPhone && (
