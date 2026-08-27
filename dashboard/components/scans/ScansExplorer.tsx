@@ -69,33 +69,35 @@ function AvailabilityIcons({ card }: { card: VisitingCard }) {
 
   return (
     <div className="flex items-center gap-1.5">
+      {/* shrink-0 goes on each <span> — the actual flex item in this row —
+          not on the icon it wraps; a class on the nested icon doesn't
+          affect how the flex algorithm sizes its parent. Load-bearing for
+          the WhatsApp one specifically: Tailwind's Preflight applies
+          max-width:100% to <img> (not <svg>, which is what the lucide
+          icons render as), so once the row runs short on space, an <img>
+          whose flex-item ancestor has no shrink protection gets squeezed
+          arbitrarily small — confirmed by reproducing it at a narrow
+          viewport before adding this. */}
       {hasPhone && (
-        <span title="WhatsApp available">
+        <span title="WhatsApp available" className="shrink-0">
           {/* A filled circle badge reads visually smaller than the adjacent
               bold-stroke lucide icons at the same nominal pixel size, so
-              this gets a bit more room to look proportionate next to them.
-              shrink-0 is load-bearing, not decorative: Tailwind's Preflight
-              applies max-width:100% to <img> (not <svg>, which is what the
-              lucide icons render as) — in this flex row that lets the
-              browser's flex-shrink algorithm squeeze this <img> down to a
-              few px regardless of the width/height props, since it has no
-              well-defined min-content floor the way the sibling <svg>
-              icons do. */}
-          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={18} height={18} className="shrink-0" />
+              this gets a bit more room to look proportionate next to them. */}
+          <Image src="/icons/channel-whatsapp.svg" alt="WhatsApp available" width={18} height={18} />
         </span>
       )}
       {hasPhone && (
-        <span title="Phone available">
+        <span title="Phone available" className="shrink-0">
           <Phone className="size-3.5 text-muted-2" strokeWidth={2} />
         </span>
       )}
       {hasEmail && (
-        <span title="Email available">
+        <span title="Email available" className="shrink-0">
           <Mail className="size-3.5 text-muted-2" strokeWidth={2} />
         </span>
       )}
       {hasWebsite && (
-        <span title="Website available">
+        <span title="Website available" className="shrink-0">
           <Globe className="size-3.5 text-muted-2" strokeWidth={2} />
         </span>
       )}
