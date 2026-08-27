@@ -31,9 +31,31 @@ verified live:
    account's most-recently-set per-channel value.
 3. A follow-up billing-correctness fix also shipped in this window — see item 12 below
    (`annual_price_inr` → `annual_monthly_price_inr`).
+4. **The WhatsApp icon in the new "Availability" column rendered tiny** (a few px, not its
+   specified 18px) — took three attempts to actually fix, verified each time against the *live*
+   site with Playwright rather than by eye, which is exactly what caught that the first two
+   attempts genuinely changed nothing:
+   - Attempt 1 (bumping the size prop 14→18) — wrong: the *rendered* size never depended on the
+     size prop at all.
+   - Attempt 2 (adding explicit `width`/`height` to the SVG file, since it only had a `viewBox`) —
+     also wrong, though a reasonable-looking fix for a real, separate issue (the browser's
+     `naturalWidth`/`Height` fallback for the unsized SVG genuinely was bogus) — it just wasn't
+     *this* bug.
+   - Real cause, found by reproducing the exact table markup locally and narrowing the viewport
+     until it visibly broke: Tailwind's Preflight sets `max-width: 100%` on `<img>` (not `<svg>`,
+     which is what the sibling lucide icons render as), and in a flex row with real space
+     pressure, the `<img>`'s flex-item ancestor had no shrink protection, so it got squeezed
+     arbitrarily small. Adding `shrink-0` to the `<Image>` itself (a natural first guess) *also*
+     did nothing, since the actual flex item is the `<span>` wrapping it, not the image — a class
+     on a non-flex-item descendant doesn't influence how its flex-item ancestor is sized. Moving
+     `shrink-0` to the wrapping `<span>` was the real fix.
 
 Lesson for next time: run the **entire** "Verify" checklist under Step 2 after applying
-migrations, not just the numbered `.sql` files — it would have caught #2 immediately.
+migrations, not just the numbered `.sql` files — it would have caught #2 immediately. And for a
+CSS layout bug, verify against a real narrow/constrained rendering (Playwright + a narrowed
+viewport, not just eyeballing a screenshot at one size) — two of the three attempts above looked
+individually plausible but were empirically inert, and only checking the actual computed style
+after each one caught that.
 
 ## What's in this batch
 
