@@ -2,6 +2,7 @@ import { visitingCardsRepo } from "../db/repositories/visitingCards.repo";
 import { cardMessageRefsRepo } from "../db/repositories/cardMessageRefs.repo";
 import { aiUsageLogRepo } from "../db/repositories/aiUsageLog.repo";
 import { extractCardWithMeta, VisionCallMeta } from "../integrations/ai/vision";
+import { decodeQrFromImage } from "../integrations/qr/decode";
 import { supabaseStorage } from "../integrations/storage/supabaseStorage";
 import { Channel, ExtractedCard, VisitingCard } from "../types/domain";
 import { withScanSlot } from "./scanQueue";
@@ -62,6 +63,16 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
       if (meta) await aiUsageLogRepo.record({ task: "vision_extraction", ...meta, confidence: null });
       throw err;
     }
+
+    // A deterministic decode beats the vision model's own guess at QR
+    // content — it can't be fooled the way visual "reading" of a QR's
+    // module grid can, so it takes priority whenever it actually finds
+    // one. Falls back to whatever the model read (existing behavior) if
+    // decoding the front and (if present) back image both come up empty —
+    // a QR photographed at a steep angle or heavily blurred can still slip
+    // past the decoder.
+    const decodedQr = decodeQrFromImage(input.imageBuffer, input.mimeType) ?? (input.backImageBuffer && input.backMimeType ? decodeQrFromImage(input.backImageBuffer, input.backMimeType) : null);
+    if (decodedQr) extracted = { ...extracted, qr_code_content: decodedQr };
 
     const card = await visitingCardsRepo.create({
       userId: input.userId,

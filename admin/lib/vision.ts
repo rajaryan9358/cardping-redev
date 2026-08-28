@@ -1,6 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { appEnvFiles } from "./appEnvFiles";
+import { decodeQrFromImage } from "./qrDecode";
 
 export type ExtractionProvider = "openai" | "gemini";
 
@@ -97,11 +98,10 @@ async function downloadAsBase64(imageUrl: string): Promise<{ base64: string; mim
   return { base64: buffer.toString("base64"), mimeType };
 }
 
-async function extractWithOpenAi(imageUrl: string, model: string): Promise<Record<string, unknown>> {
+async function extractWithOpenAi(base64: string, mimeType: string, model: string): Promise<Record<string, unknown>> {
   const apiKey = await appEnvFiles.readEnvValue("server", "OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY not found in server/.env");
 
-  const { base64, mimeType } = await downloadAsBase64(imageUrl);
   const openai = new OpenAI({ apiKey });
   const response = await openai.chat.completions.create({
     model,
@@ -124,11 +124,10 @@ interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 }
 
-async function extractWithGemini(imageUrl: string, model: string): Promise<Record<string, unknown>> {
+async function extractWithGemini(base64: string, mimeType: string, model: string): Promise<Record<string, unknown>> {
   const apiKey = await appEnvFiles.readEnvValue("server", "GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not found in server/.env");
 
-  const { base64, mimeType } = await downloadAsBase64(imageUrl);
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -151,5 +150,15 @@ export async function reExtractCardFromImageUrl(
   provider: ExtractionProvider,
   model: string,
 ): Promise<Record<string, unknown>> {
-  return provider === "gemini" ? extractWithGemini(imageUrl, model) : extractWithOpenAi(imageUrl, model);
+  const { base64, mimeType } = await downloadAsBase64(imageUrl);
+  const extracted =
+    provider === "gemini" ? await extractWithGemini(base64, mimeType, model) : await extractWithOpenAi(base64, mimeType, model);
+
+  // A deterministic decode beats the vision model's own guess at QR
+  // content — see qrDecode.ts's header comment. Only overrides when it
+  // actually finds one; otherwise keeps whatever the model read.
+  const decodedQr = decodeQrFromImage(Buffer.from(base64, "base64"), mimeType);
+  if (decodedQr) extracted.qr_code_content = decodedQr;
+
+  return extracted;
 }

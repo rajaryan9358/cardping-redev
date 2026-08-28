@@ -259,8 +259,8 @@ export function SubscriptionClient({ account, plans }: { account: Account; plans
                   billed monthly.
                 </>
               )}{" "}
-              Your credit allotment will change to {pendingPlan.plan.coinsIncluded.toLocaleString()} credits per billing
-              cycle.
+              Your credit allotment will change to {pendingPlan.plan.coinsIncluded.toLocaleString()} credits per
+              month.
             </p>
           </div>
         )}
