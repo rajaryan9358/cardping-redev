@@ -110,23 +110,6 @@ interface RawChannelLink {
   unlinked_at: string | null;
 }
 
-interface RawLegacyUser {
-  id: string;
-  full_name: string | null;
-  email: string | null;
-  wa_id: string | null;
-  telegram_id: string | null;
-  telegram_chat_id: string | null;
-  coin_balance: number;
-  blocked_at: string | null;
-  plan_id: string | null;
-  plan_expires_at: string | null;
-  subscription_tier: string | null;
-  marketing_opt_in: boolean;
-  created_at: string;
-  last_login: string | null;
-}
-
 function matchesStatus(
   status: UserStatusFilter | undefined,
   blockedAt: string | null,
@@ -179,7 +162,11 @@ export type ListUsersFilterParams = Omit<ListUsersParams, "page" | "pageSize">;
 /** Fetches + filters + sorts every matching row, unpaginated — shared by
  * listUsers (which slices a page off the end) and listUsersForExport
  * (which returns everything, for a CSV that matches the current filters
- * exactly, not just what's on screen). */
+ * exactly, not just what's on screen). Account rows only — someone who's
+ * only ever messaged the bot and never completed signup has no `accounts`
+ * row at all, so they don't belong in a directory of real users; that raw
+ * channel identity is still reachable directly at /users/<usersId> (e.g.
+ * from a card's uploader) via getUserDetail's unlinked_user fallback. */
 async function buildFilteredUserRows({
   search,
   status,
@@ -187,31 +174,19 @@ async function buildFilteredUserRows({
   expiresAfter,
   sort,
 }: ListUsersFilterParams): Promise<AdminUserListRow[]> {
-  const [{ data: accounts, error: accErr }, { data: links, error: linkErr }, { data: legacyUsers, error: userErr }] =
-    await Promise.all([
-      supabase.from("accounts").select("id, full_name, email, coin_balance, blocked_at, plan_id, plan_expires_at, created_at"),
-      supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier, unlinked_at"),
-      supabase
-        .from("users")
-        .select(
-          "id, full_name, email, wa_id, telegram_id, telegram_chat_id, coin_balance, blocked_at, plan_id, plan_expires_at, subscription_tier, marketing_opt_in, created_at, last_login",
-        ),
-    ]);
+  const [{ data: accounts, error: accErr }, { data: links, error: linkErr }] = await Promise.all([
+    supabase.from("accounts").select("id, full_name, email, coin_balance, blocked_at, plan_id, plan_expires_at, created_at"),
+    supabase.from("channel_links").select("account_id, users_id, channel, channel_identifier, unlinked_at"),
+  ]);
   if (accErr) throw accErr;
   if (linkErr) throw linkErr;
-  if (userErr) throw userErr;
 
-  // linkedUsersIds covers every users_id ever linked (active or
-  // disconnected) — a channel that's just currently disconnected must
-  // still be treated as "belongs to an account" here, or it re-appears as
-  // a second, orphaned unlinkedRows entry for the same person the moment
-  // they disconnect it (see unlinkedRows' filter below). linksByAccount
-  // is the *display* list (channel badges, wa_id/telegram_id shown on the
-  // account row) and correctly only ever shows currently-active channels.
+  // linksByAccount is the *display* list (channel badges, wa_id/telegram_id
+  // shown on the account row) and only ever shows currently-active channels
+  // — a disconnected-but-still-linked channel stays attributed to the
+  // account (not dropped) elsewhere, this map just isn't where that shows.
   const linksByAccount = new Map<string, RawChannelLink[]>();
-  const linkedUsersIds = new Set<string>();
   for (const link of (links ?? []) as RawChannelLink[]) {
-    linkedUsersIds.add(link.users_id);
     if (link.unlinked_at !== null) continue;
     const arr = linksByAccount.get(link.account_id) ?? [];
     arr.push(link);
@@ -251,35 +226,7 @@ async function buildFilteredUserRows({
       };
     });
 
-  const unlinkedRows: AdminUserListRow[] = ((legacyUsers ?? []) as RawLegacyUser[])
-    .filter((u) => !linkedUsersIds.has(u.id))
-    .filter((u) => matchesStatus(status, u.blocked_at, u.plan_id, u.plan_expires_at, u.coin_balance, nowMs, u.full_name, u.email))
-    .filter((u) => matchesExpiry(u.plan_id, u.plan_expires_at, expiresBefore, expiresAfter))
-    .filter((u) => !term || matchesSearch(term, [u.email, u.full_name, u.wa_id, u.telegram_id]))
-    .map((u) => ({
-      id: u.id,
-      kind: "unlinked_user" as const,
-      detail_user_id: u.id,
-      userIds: [u.id],
-      full_name: u.full_name,
-      email: u.email,
-      wa_id: u.wa_id,
-      telegram_id: u.telegram_id,
-      telegram_chat_id: u.telegram_chat_id,
-      channels: [u.wa_id ? "whatsapp" : null, u.telegram_id ? "telegram" : null].filter(
-        (c): c is "whatsapp" | "telegram" => c !== null,
-      ),
-      subscription_tier: u.subscription_tier,
-      marketing_opt_in: u.marketing_opt_in,
-      created_at: u.created_at,
-      last_login: u.last_login,
-      effective_coin_balance: u.coin_balance,
-      effective_blocked_at: u.blocked_at,
-      effective_plan_id: u.plan_id,
-      effective_plan_expires_at: u.plan_expires_at,
-    }));
-
-  const allRows = [...accountRows, ...unlinkedRows];
+  const allRows = accountRows;
 
   const parsedSort = parseSort(sort);
   const sortField = parsedSort && SORTABLE_FIELDS[parsedSort.field] ? parsedSort.field : "created_at";
