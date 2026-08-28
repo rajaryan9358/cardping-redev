@@ -96,3 +96,32 @@ export const DUAL_SIDE_PROMPT =
   "the first one you see. Only fold two sides together into a single value for a field that " +
   "isn't an array (e.g. person_name, company_name) when they agree; if they disagree, prefer " +
   "whichever side is clearer/more complete.";
+
+/** Appended to the prompt when a QR code on this card was already decoded
+ * deterministically (see integrations/qr/decode.ts) before this vision
+ * call ran — handing the model the exact raw content up front rather than
+ * asking it to visually "read" the QR itself, which it's fundamentally
+ * unreliable at (see qr/decode.ts's own header comment). A business-card
+ * QR very often encodes a vCard or a contact/profile URL carrying fields
+ * the printed card doesn't show clearly (or at all) — this lets the model
+ * mine that data to fill gaps instead of the QR's content sitting inert
+ * in its own field. Returns "" (no-op) when nothing was decoded, so a
+ * card with no QR — or one the decoder couldn't read — behaves exactly as
+ * before this existed. */
+export function qrContextBlock(decodedQrContent: string | null | undefined): string {
+  if (!decodedQrContent) return "";
+  return (
+    `\n\nThis card's QR code was already decoded separately (not by you) — its exact raw ` +
+    `content is:\n"""\n${decodedQrContent}\n"""\n` +
+    `Set "qr_code_content" to this exact string, verbatim — don't re-transcribe or paraphrase ` +
+    `it, and don't second-guess it against what you see in the image. Many business-card QR ` +
+    `codes encode a vCard (structured name/company/title/phone/email/address/website) or a ` +
+    `contact/profile URL — parse it and use anything it contains to fill in fields you can't ` +
+    `read clearly (or at all) from the card image itself; a phone/email/website/address found ` +
+    `only in the QR still counts as a genuine value for that field's array, same as one you can ` +
+    `see printed. Where the QR data and what's printed on the card disagree on the same field, ` +
+    `prefer what's printed on the card (the QR data hasn't been verified as current) — but don't ` +
+    `discard something the card itself leaves blank or illegible just because the QR is the only ` +
+    `source for it.`
+  );
+}

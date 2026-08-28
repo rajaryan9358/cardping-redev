@@ -1,7 +1,7 @@
 import { env } from "../../config/env";
 import { ExtractedCard } from "../../types/domain";
 import { parseJsonResponse } from "../openai/client";
-import { DUAL_SIDE_PROMPT, EXTRACTION_PROMPT } from "../ai/visionPrompt";
+import { DUAL_SIDE_PROMPT, EXTRACTION_PROMPT, qrContextBlock } from "../ai/visionPrompt";
 import { VisionExtractionResult } from "../openai/vision";
 
 interface GeminiPart {
@@ -23,9 +23,10 @@ export async function extractCardFromImages(
   frontMimeType: string,
   back?: Buffer,
   backMimeType?: string,
+  decodedQrContent?: string | null,
 ): Promise<VisionExtractionResult> {
   const parts: GeminiPart[] = [
-    { text: EXTRACTION_PROMPT + (back ? DUAL_SIDE_PROMPT : "") },
+    { text: EXTRACTION_PROMPT + (back ? DUAL_SIDE_PROMPT : "") + qrContextBlock(decodedQrContent) },
     { inline_data: { mime_type: frontMimeType, data: front.toString("base64") } },
   ];
   if (back && backMimeType) {

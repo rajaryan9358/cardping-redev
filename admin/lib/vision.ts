@@ -82,6 +82,27 @@ Rules:
   field above. Leave "" if there's nothing left over.
 - Confidence must be between 0.5 and 1.0 based on clarity.`;
 
+// Duplicated from server/src/integrations/ai/visionPrompt.ts's
+// qrContextBlock, same reasoning as this file's own header comment. See
+// there for the fuller explanation of why this exists.
+function qrContextBlock(decodedQrContent: string | null): string {
+  if (!decodedQrContent) return "";
+  return (
+    `\n\nThis card's QR code was already decoded separately (not by you) — its exact raw ` +
+    `content is:\n"""\n${decodedQrContent}\n"""\n` +
+    `Set "qr_code_content" to this exact string, verbatim — don't re-transcribe or paraphrase ` +
+    `it, and don't second-guess it against what you see in the image. Many business-card QR ` +
+    `codes encode a vCard (structured name/company/title/phone/email/address/website) or a ` +
+    `contact/profile URL — parse it and use anything it contains to fill in fields you can't ` +
+    `read clearly (or at all) from the card image itself; a phone/email/website/address found ` +
+    `only in the QR still counts as a genuine value for that field's array, same as one you can ` +
+    `see printed. Where the QR data and what's printed on the card disagree on the same field, ` +
+    `prefer what's printed on the card (the QR data hasn't been verified as current) — but don't ` +
+    `discard something the card itself leaves blank or illegible just because the QR is the only ` +
+    `source for it.`
+  );
+}
+
 function parseJsonResponse<T>(raw: string): T {
   let text = raw.trim().replace(/```json|```/g, "").trim();
   if (text.startsWith('"') && text.endsWith('"')) {
@@ -98,7 +119,7 @@ async function downloadAsBase64(imageUrl: string): Promise<{ base64: string; mim
   return { base64: buffer.toString("base64"), mimeType };
 }
 
-async function extractWithOpenAi(base64: string, mimeType: string, model: string): Promise<Record<string, unknown>> {
+async function extractWithOpenAi(base64: string, mimeType: string, model: string, decodedQrContent: string | null): Promise<Record<string, unknown>> {
   const apiKey = await appEnvFiles.readEnvValue("server", "OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY not found in server/.env");
 
@@ -109,7 +130,7 @@ async function extractWithOpenAi(base64: string, mimeType: string, model: string
       {
         role: "user",
         content: [
-          { type: "text", text: EXTRACTION_PROMPT },
+          { type: "text", text: EXTRACTION_PROMPT + qrContextBlock(decodedQrContent) },
           { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
         ],
       },
@@ -124,7 +145,7 @@ interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 }
 
-async function extractWithGemini(base64: string, mimeType: string, model: string): Promise<Record<string, unknown>> {
+async function extractWithGemini(base64: string, mimeType: string, model: string, decodedQrContent: string | null): Promise<Record<string, unknown>> {
   const apiKey = await appEnvFiles.readEnvValue("server", "GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not found in server/.env");
 
@@ -134,7 +155,7 @@ async function extractWithGemini(base64: string, mimeType: string, model: string
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mimeType, data: base64 } }] }],
+        contents: [{ parts: [{ text: EXTRACTION_PROMPT + qrContextBlock(decodedQrContent) }, { inline_data: { mime_type: mimeType, data: base64 } }] }],
       }),
     },
   );
@@ -151,13 +172,23 @@ export async function reExtractCardFromImageUrl(
   model: string,
 ): Promise<Record<string, unknown>> {
   const { base64, mimeType } = await downloadAsBase64(imageUrl);
-  const extracted =
-    provider === "gemini" ? await extractWithGemini(base64, mimeType, model) : await extractWithOpenAi(base64, mimeType, model);
 
-  // A deterministic decode beats the vision model's own guess at QR
-  // content — see qrDecode.ts's header comment. Only overrides when it
-  // actually finds one; otherwise keeps whatever the model read.
+  // Decoded before the vision call (cheap, local, no extra network round
+  // trip) so it can be handed to the model as context — see
+  // qrContextBlock's comment — instead of only being usable after the
+  // fact. Falls back to whatever the model reads on its own if nothing
+  // decodes.
   const decodedQr = decodeQrFromImage(Buffer.from(base64, "base64"), mimeType);
+
+  const extracted =
+    provider === "gemini"
+      ? await extractWithGemini(base64, mimeType, model, decodedQr)
+      : await extractWithOpenAi(base64, mimeType, model, decodedQr);
+
+  // Still force the exact decoded string into qr_code_content afterward —
+  // guarantees byte-for-byte fidelity regardless of how well the model
+  // followed the "echo it verbatim" instruction. Only overrides when the
+  // decoder actually found something.
   if (decodedQr) extracted.qr_code_content = decodedQr;
 
   return extracted;

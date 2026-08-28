@@ -26,6 +26,7 @@ export async function extractCardWithMeta(
   frontMimeType: string,
   back?: Buffer,
   backMimeType?: string,
+  decodedQrContent?: string | null,
 ): Promise<{ extracted: ExtractedCard; meta: VisionCallMeta }> {
   const provider = env.VISION_PROVIDER;
   const model = provider === "gemini" ? env.GEMINI_VISION_MODEL : env.OPENAI_VISION_MODEL;
@@ -33,7 +34,7 @@ export async function extractCardWithMeta(
   const started = Date.now();
 
   try {
-    const { extracted, inputTokens, outputTokens } = await impl(front, frontMimeType, back, backMimeType);
+    const { extracted, inputTokens, outputTokens } = await impl(front, frontMimeType, back, backMimeType, decodedQrContent);
     return {
       extracted,
       meta: { provider, model, inputTokens, outputTokens, latencyMs: Date.now() - started, success: true, error: null },

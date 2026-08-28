@@ -39,6 +39,7 @@
 import "dotenv/config";
 import { supabase } from "../src/db/client";
 import { extractCardWithMeta } from "../src/integrations/ai/vision";
+import { decodeQrFromImage } from "../src/integrations/qr/decode";
 import { aiUsageLogRepo } from "../src/db/repositories/aiUsageLog.repo";
 import { ExtractedCard } from "../src/types/domain";
 
@@ -159,12 +160,19 @@ async function main() {
       const front = await downloadImage(card.image_public_url);
       const back = card.back_image_public_url ? await downloadImage(card.back_image_public_url) : null;
 
+      // Decoded before the vision call so it can be handed to the model as
+      // context (see visionPrompt.ts's qrContextBlock) instead of only
+      // overriding qr_code_content after the fact.
+      const decodedQr = decodeQrFromImage(front.buffer, front.mimeType) ?? (back ? decodeQrFromImage(back.buffer, back.mimeType) : null);
+
       const { extracted, meta } = await extractCardWithMeta(
         front.buffer,
         front.mimeType,
         back?.buffer,
         back?.mimeType,
+        decodedQr,
       );
+      if (decodedQr) extracted.qr_code_content = decodedQr;
 
       await aiUsageLogRepo.record({
         task: "vision_extraction",

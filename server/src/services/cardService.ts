@@ -48,10 +48,19 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
   // memory past PM2's restart cap. Anything beyond the concurrency cap
   // queues here rather than firing unbounded work.
   const { card, extracted } = await withScanSlot(async () => {
+    // Decoded deterministically, before the vision call — cheap and local
+    // (no network round-trip), so there's no reason to wait until after
+    // extraction the way the QR-only version of this did. Handing the
+    // model the exact decoded content up front (via qrContextBlock in the
+    // prompt — see visionPrompt.ts) lets it mine a vCard/contact-URL QR
+    // for fields the printed card doesn't show clearly, instead of the
+    // decoded string just sitting inert in its own column.
+    const decodedQr = decodeQrFromImage(input.imageBuffer, input.mimeType) ?? (input.backImageBuffer && input.backMimeType ? decodeQrFromImage(input.backImageBuffer, input.backMimeType) : null);
+
     let visionMeta: VisionCallMeta | undefined;
     let extracted;
     try {
-      const result = await extractCardWithMeta(input.imageBuffer, input.mimeType, input.backImageBuffer, input.backMimeType);
+      const result = await extractCardWithMeta(input.imageBuffer, input.mimeType, input.backImageBuffer, input.backMimeType, decodedQr);
       extracted = result.extracted;
       visionMeta = result.meta;
     } catch (err) {
@@ -64,14 +73,12 @@ export async function processCardImage(input: ProcessCardInput): Promise<Process
       throw err;
     }
 
-    // A deterministic decode beats the vision model's own guess at QR
-    // content — it can't be fooled the way visual "reading" of a QR's
-    // module grid can, so it takes priority whenever it actually finds
-    // one. Falls back to whatever the model read (existing behavior) if
-    // decoding the front and (if present) back image both come up empty —
-    // a QR photographed at a steep angle or heavily blurred can still slip
-    // past the decoder.
-    const decodedQr = decodeQrFromImage(input.imageBuffer, input.mimeType) ?? (input.backImageBuffer && input.backMimeType ? decodeQrFromImage(input.backImageBuffer, input.backMimeType) : null);
+    // Still force the exact decoded string into qr_code_content afterward
+    // — the prompt already asks the model to echo it verbatim, but this
+    // guarantees byte-for-byte fidelity (no risk of paraphrasing/trimming)
+    // regardless of how well the model followed that instruction. Only
+    // overrides when the decoder actually found something; otherwise keeps
+    // whatever the model read on its own (unchanged fallback behavior).
     if (decodedQr) extracted = { ...extracted, qr_code_content: decodedQr };
 
     const card = await visitingCardsRepo.create({
