@@ -4,6 +4,8 @@ import { usersRepo } from "../../db/repositories/users.repo";
 import { channelLinksRepo } from "../../db/repositories/channelLinks.repo";
 import { childLogger } from "../../lib/logger";
 import * as channelOnboardingService from "../../services/channelOnboardingService";
+import { inboundMessageLogRepo } from "../../db/repositories/inboundMessageLog.repo";
+import { NormalizedTelegramMessage } from "../../integrations/telegram/types";
 import { handlePhoto } from "./handlers/photo";
 import { handleVoice } from "./handlers/voice";
 import { handleText } from "./handlers/text";
@@ -12,6 +14,16 @@ import { tryContinuePendingState } from "./handlers/stateContinuation";
 import { Copy } from "./messages";
 
 const log = childLogger("tg-router");
+
+/** Same idea as the WhatsApp router's summarizeMessage — a short
+ * human-readable summary of what came in, not a full payload dump. */
+function summarizeMessage(message: NormalizedTelegramMessage): string | null {
+  if (message.type === "text") return message.text;
+  if (message.type === "callback_button") return message.callbackData;
+  if (message.type === "photo") return "[photo]";
+  if (message.type === "voice") return "[voice note]";
+  return null;
+}
 
 /** Entry point called by routes/telegramWebhook.route.ts for every inbound
  * Telegram update. Runs after the HTTP response has already been sent to
@@ -26,6 +38,18 @@ export async function routeTelegramUpdate(update: unknown): Promise<void> {
     message.chatId,
     message.firstName,
   );
+
+  // Logged for every real message regardless of how it's handled below —
+  // see the WhatsApp router's identical comment for why this sits right
+  // after identity resolution, before any linking/state gates.
+  await inboundMessageLogRepo.record({
+    channel: "telegram",
+    usersId: user.user_id,
+    accountId: user.account_id,
+    messageType: message.type,
+    content: summarizeMessage(message),
+    channelMessageId: message.messageId !== null ? String(message.messageId) : null,
+  });
 
   // Acknowledge the button tap immediately so Telegram stops showing the
   // loading spinner on it, regardless of how long the rest takes.
