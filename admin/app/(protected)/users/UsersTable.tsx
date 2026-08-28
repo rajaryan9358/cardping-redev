@@ -329,14 +329,19 @@ export function UsersTable({
               />
             </Td>
             <Td>
-              <Link
-                href={`/users/${user.id}`}
-                onClick={() => saveListNavState(pathname, searchParams.toString())}
-                className="font-medium text-ink hover:underline"
-              >
-                {user.full_name || "Unnamed"}
-              </Link>
-              <div className="text-xs text-muted">{user.email || "No email on file"}</div>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/users/${user.id}`}
+                  onClick={() => saveListNavState(pathname, searchParams.toString())}
+                  className="font-medium text-ink hover:underline"
+                >
+                  {user.full_name || "Unnamed"}
+                </Link>
+                {user.kind === "unlinked_user" && <Badge tone="pending">Contact only</Badge>}
+              </div>
+              <div className="text-xs text-muted">
+                {user.email || (user.kind === "unlinked_user" ? "Messaged the bot, hasn't signed up" : "No email on file")}
+              </div>
             </Td>
             <Td>
               <div className="flex items-center gap-2">

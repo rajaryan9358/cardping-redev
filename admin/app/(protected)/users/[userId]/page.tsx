@@ -30,9 +30,10 @@ export default async function UserDetailPage({ params }: { params: { userId: str
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{user.full_name || "Unnamed user"}</h1>
             {user.effective_blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
+            {user.kind === "unlinked_user" && <Badge tone="pending">Contact only — hasn't signed up</Badge>}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted">
-            <span>{user.email || "No email on file"}</span>
+            <span>{user.email || (user.kind === "unlinked_user" ? "Messaged the bot, hasn't signed up" : "No email on file")}</span>
             {user.channels.map((c) => (
               <span key={c.usersId + c.channel} className="flex items-center gap-1.5">
                 {c.channel === "whatsapp" ? (
