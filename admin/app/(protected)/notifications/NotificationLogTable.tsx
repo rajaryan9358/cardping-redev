@@ -4,10 +4,23 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { Pagination } from "../../../components/ui/Pagination";
 import { Badge } from "../../../components/ui/Badge";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { NotificationLogRow } from "../../../lib/repositories/adminNotifications.repo";
 import { formatDateTime } from "../../../lib/format";
 
 const STATUS_TONE = { sent: "success", failed: "danger", pending: "pending" } as const;
+
+const TYPE_OPTIONS = [
+  { value: "", label: "All types" },
+  { value: "renewal_reminder", label: "Renewal reminder" },
+  { value: "low_balance_alert", label: "Low balance alert" },
+] as const;
+
+const TRIGGERED_BY_OPTIONS = [
+  { value: "", label: "Auto & manual" },
+  { value: "auto", label: "Auto only" },
+  { value: "manual", label: "Manual only" },
+] as const;
 
 // Send failures get thrown (and persisted) as one flattened string, e.g.
 // `WhatsApp send failed (404): {"error":{"message":"..."}}` — this pulls
@@ -62,27 +75,34 @@ export function NotificationLogTable({
     window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
+  const typeValue = type ? TYPE_OPTIONS.find((o) => o.value === type)?.label ?? null : null;
+  const triggeredByValue = triggeredBy ? TRIGGERED_BY_OPTIONS.find((o) => o.value === triggeredBy)?.label ?? null : null;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={type}
-          onChange={(e) => navigate({ type: e.target.value })}
-          className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-        >
-          <option value="">All types</option>
-          <option value="renewal_reminder">Renewal reminder</option>
-          <option value="low_balance_alert">Low balance alert</option>
-        </select>
-        <select
-          value={triggeredBy}
-          onChange={(e) => navigate({ triggeredBy: e.target.value })}
-          className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-        >
-          <option value="">Auto & manual</option>
-          <option value="auto">Auto only</option>
-          <option value="manual">Manual only</option>
-        </select>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+
+        <FilterPopover label="Type" value={typeValue} onClear={() => navigate({ type: "" })}>
+          <div className="flex flex-col gap-1">
+            {TYPE_OPTIONS.map((opt) => (
+              <FilterOption key={opt.value} label={opt.label} selected={type === opt.value} onClick={() => navigate({ type: opt.value })} />
+            ))}
+          </div>
+        </FilterPopover>
+
+        <FilterPopover label="Triggered by" value={triggeredByValue} onClear={() => navigate({ triggeredBy: "" })}>
+          <div className="flex flex-col gap-1">
+            {TRIGGERED_BY_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                selected={triggeredBy === opt.value}
+                onClick={() => navigate({ triggeredBy: opt.value })}
+              />
+            ))}
+          </div>
+        </FilterPopover>
       </div>
 
       <TableCard>

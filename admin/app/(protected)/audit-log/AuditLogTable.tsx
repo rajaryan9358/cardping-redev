@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { Pagination } from "../../../components/ui/Pagination";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { AuditLogRow } from "../../../lib/repositories/adminAuditLog.repo";
 import { formatDateTime } from "../../../lib/format";
 
@@ -50,33 +51,31 @@ export function AuditLogTable({
     window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
+  const actionValue = selectedAction || null;
+  const adminValue = selectedAdminId ? admins.find((a) => a.id === selectedAdminId)?.email ?? null : null;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={selectedAction}
-          onChange={(e) => navigate({ action: e.target.value })}
-          className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-        >
-          <option value="">All actions</option>
-          {actions.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
-        <select
-          value={selectedAdminId}
-          onChange={(e) => navigate({ adminUserId: e.target.value })}
-          className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-        >
-          <option value="">All admins</option>
-          {admins.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.email}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+
+        <FilterPopover label="Action" value={actionValue} onClear={() => navigate({ action: "" })}>
+          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+            <FilterOption label="All actions" selected={!selectedAction} onClick={() => navigate({ action: "" })} />
+            {actions.map((a) => (
+              <FilterOption key={a} label={a} selected={selectedAction === a} onClick={() => navigate({ action: a })} />
+            ))}
+          </div>
+        </FilterPopover>
+
+        <FilterPopover label="Admin" value={adminValue} onClear={() => navigate({ adminUserId: "" })}>
+          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+            <FilterOption label="All admins" selected={!selectedAdminId} onClick={() => navigate({ adminUserId: "" })} />
+            {admins.map((a) => (
+              <FilterOption key={a.id} label={a.email} selected={selectedAdminId === a.id} onClick={() => navigate({ adminUserId: a.id })} />
+            ))}
+          </div>
+        </FilterPopover>
       </div>
 
       <TableCard>

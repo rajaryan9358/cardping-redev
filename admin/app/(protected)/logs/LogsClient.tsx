@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { TextField } from "../../../components/ui/TextField";
 import { Badge } from "../../../components/ui/Badge";
 import { Pagination } from "../../../components/ui/Pagination";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { cn } from "@/lib/cn";
 import { LogEntry, LogProcessName } from "../../../lib/serverLogs";
 import { formatDateTime } from "../../../lib/format";
@@ -113,6 +114,13 @@ export function LogsClient({
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
+  // "problems" (Warn/Error) is this page's deliberate default lens, not an
+  // unset state — so it reads as idle (no accent, no clear "×"), and only
+  // an explicit pick away from it (including "All") shows as active.
+  // Clearing returns to that default, not to "All" — "All" is itself a
+  // deliberate, noisier choice a click can still reach directly.
+  const levelValue = level === "problems" ? null : LEVEL_TABS.find((t) => t.value === level)?.label ?? null;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -145,29 +153,22 @@ export function LogsClient({
 
       {error && <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger-text">{error}</p>}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Level</span>
-          <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-            {LEVEL_TABS.map((tab) => (
-              <button
-                key={tab.value || "all"}
-                type="button"
-                onClick={() => setLevel(tab.value)}
-                className={cn(
-                  "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                  level === tab.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <div className="max-w-sm">
+        <TextField label="Search" placeholder="Filter by message or scope…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+          <FilterPopover label="Level" value={levelValue} onClear={() => setLevel("problems")}>
+            <div className="flex flex-col gap-1">
+              {LEVEL_TABS.map((tab) => (
+                <FilterOption key={tab.value || "all"} label={tab.label} selected={level === tab.value} onClick={() => setLevel(tab.value)} />
+              ))}
+            </div>
+          </FilterPopover>
         </div>
-        <div className="max-w-sm flex-1">
-          <TextField label="Search" placeholder="Filter by message or scope…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <p className="pb-2.5 text-xs text-muted">
+        <p className="text-xs text-muted">
           {filtered.length} of {logs.length} lines
         </p>
       </div>

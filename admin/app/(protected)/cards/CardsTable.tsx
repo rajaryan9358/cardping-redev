@@ -12,6 +12,7 @@ import { TextField } from "../../../components/ui/TextField";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { cn } from "@/lib/cn";
 import { ChannelIcon } from "@/components/ChannelIcon";
 import { AdminCardRow } from "../../../lib/repositories/adminCards.repo";
@@ -210,6 +211,13 @@ export function CardsTable({
     }
   }
 
+  // "All" (maxConfidence "1") is the idle state for this filter — navigate()
+  // always sets the param (never deletes it), so "clear" means going back
+  // to "1", not removing the param.
+  const confidenceValue = maxConfidence < 1 ? CONFIDENCE_OPTIONS.find((o) => o.value === String(maxConfidence))?.label ?? null : null;
+  const activeAvailability = AVAILABILITY_OPTIONS.filter((opt) => ({ hasWhatsapp, hasEmail, hasPhone, hasWebsite }[opt.key]));
+  const availabilityValue = activeAvailability.length > 0 ? activeAvailability.map((o) => o.label).join(" + ") : null;
+
   function clearNarrowingFilters(): string {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("userIds");
@@ -257,68 +265,64 @@ export function CardsTable({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = new FormData(e.currentTarget).get("search");
-            navigate({ search: String(value ?? "") });
-          }}
-          className="max-w-sm"
-        >
-          <TextField name="search" label="Search" placeholder="Name, company, email, or phone" defaultValue={search} />
-        </form>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("search");
+          navigate({ search: String(value ?? "") });
+        }}
+        className="max-w-sm"
+      >
+        <TextField name="search" label="Search" placeholder="Name, company, email, or phone" defaultValue={search} />
+      </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+
+          <FilterPopover label="Confidence" value={confidenceValue} onClear={() => navigate({ maxConfidence: "1" })}>
+            <div className="flex flex-col gap-1">
+              {CONFIDENCE_OPTIONS.map((opt) => (
+                <FilterOption
+                  key={opt.value}
+                  label={opt.label}
+                  selected={String(maxConfidence) === opt.value}
+                  onClick={() => navigate({ maxConfidence: opt.value })}
+                />
+              ))}
+            </div>
+          </FilterPopover>
+
+          <FilterPopover
+            label="Has"
+            value={availabilityValue}
+            onClear={() => navigate({ hasWhatsapp: false, hasEmail: false, hasPhone: false, hasWebsite: false })}
+          >
+            <div className="flex flex-col gap-1">
+              {AVAILABILITY_OPTIONS.map((opt) => {
+                const active = { hasWhatsapp, hasEmail, hasPhone, hasWebsite }[opt.key];
+                return (
+                  <label key={opt.key} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink hover:bg-active-bg">
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => navigate({ [opt.key]: !active })}
+                      className="size-4 rounded border-border text-accent"
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+          </FilterPopover>
+        </div>
+
         <a href={`/admin/cards/export?${searchParams.toString()}`}>
           <Button variant="secondary" className="gap-1.5">
             <Download className="size-4" strokeWidth={2} />
             Export CSV
           </Button>
         </a>
-      </div>
-
-      <div className="flex flex-wrap gap-6">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Confidence at or below</span>
-          <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-            {CONFIDENCE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => navigate({ maxConfidence: opt.value })}
-                className={cn(
-                  "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                  String(maxConfidence) === opt.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Has</span>
-          <div className="flex flex-wrap gap-1.5">
-            {AVAILABILITY_OPTIONS.map((opt) => {
-              const active = { hasWhatsapp, hasEmail, hasPhone, hasWebsite }[opt.key];
-              return (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => navigate({ [opt.key]: !active })}
-                  className={cn(
-                    "rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
-                    active
-                      ? "border-accent bg-accent-soft text-accent-text"
-                      : "border-border bg-surface-warm text-muted hover:text-ink",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       <TableCard>

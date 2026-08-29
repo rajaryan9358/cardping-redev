@@ -10,6 +10,7 @@ import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
 import { TextField } from "../../../components/ui/TextField";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { ChannelContactRow, WindowFilter } from "../../../lib/repositories/adminUsers.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
@@ -17,6 +18,8 @@ import { saveListNavState, restoreListScroll } from "../../../lib/listNavState";
 import { SendMessageModal, SendMessageTarget } from "./SendMessageModal";
 import { BroadcastToUsersModal } from "./BroadcastToUsersModal";
 import { BroadcastHistoryModal } from "./BroadcastHistoryModal";
+
+const WINDOW_LABELS: Record<string, string> = { within: "Within 24h", outside: "Outside 24h" };
 
 export function ContactsTable({
   channel,
@@ -45,6 +48,7 @@ export function ContactsTable({
   // "everyone matching the current filters", not "nobody").
   const [broadcastTargetIds, setBroadcastTargetIds] = useState<string[] | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+  const windowValue = windowFilter ? WINDOW_LABELS[windowFilter] ?? null : null;
 
   useEffect(() => {
     restoreListScroll(pathname, searchParams.toString());
@@ -101,33 +105,32 @@ export function ContactsTable({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = new FormData(e.currentTarget).get("search");
-            navigate({ search: String(value ?? "") });
-          }}
-          className="max-w-sm"
-        >
-          <TextField
-            name="search"
-            label="Search"
-            placeholder={channel === "whatsapp" ? "Name, email, or WhatsApp number" : "Name, email, or Telegram ID"}
-            defaultValue={search}
-          />
-        </form>
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">24h window</span>
-          <select
-            value={windowFilter}
-            onChange={(e) => navigate({ windowFilter: e.target.value || null })}
-            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
-          >
-            <option value="">Any</option>
-            <option value="within">Within 24h</option>
-            <option value="outside">Outside 24h</option>
-          </select>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("search");
+          navigate({ search: String(value ?? "") });
+        }}
+        className="max-w-sm"
+      >
+        <TextField
+          name="search"
+          label="Search"
+          placeholder={channel === "whatsapp" ? "Name, email, or WhatsApp number" : "Name, email, or Telegram ID"}
+          defaultValue={search}
+        />
+      </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+          <FilterPopover label="24h window" value={windowValue} onClear={() => navigate({ windowFilter: null })}>
+            <div className="flex flex-col gap-1">
+              <FilterOption label="Any" selected={!windowFilter} onClick={() => navigate({ windowFilter: null })} />
+              <FilterOption label="Within 24h" selected={windowFilter === "within"} onClick={() => navigate({ windowFilter: "within" })} />
+              <FilterOption label="Outside 24h" selected={windowFilter === "outside"} onClick={() => navigate({ windowFilter: "outside" })} />
+            </div>
+          </FilterPopover>
         </div>
         <Button variant="secondary" className="gap-1.5" onClick={() => setBroadcastTargetIds([])} disabled={total === 0}>
           <Megaphone className="size-4" strokeWidth={2} />

@@ -12,6 +12,7 @@ import { Badge } from "../../../components/ui/Badge";
 import { TextField } from "../../../components/ui/TextField";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
+import { FilterPopover, FilterOption } from "../../../components/ui/FilterPopover";
 import { cn } from "@/lib/cn";
 import { AdminUserListRow, UserStatusFilter, WindowFilter } from "../../../lib/repositories/adminUsers.repo";
 import { Plan } from "../../../lib/repositories/adminSubscriptions.repo";
@@ -56,6 +57,8 @@ const EXPIRY_QUICK_FILTERS = [
 function daysFromNowIso(days: number): string {
   return new Date(Date.now() + days * 86400000).toISOString();
 }
+
+const WINDOW_LABELS: Record<string, string> = { within: "Within 24h", outside: "Outside 24h" };
 
 export function UsersTable({
   rows,
@@ -256,6 +259,20 @@ export function UsersTable({
     (f) => f.days !== null && expiresBefore === daysFromNowIso(f.days),
   )?.days;
 
+  // Each filter's current-value display text, or null when unset — drives
+  // both the FilterPopover trigger's inline summary and its active styling.
+  const expiryValue = !expiresBefore && !expiresAfter ? null : activeExpiryDays !== undefined ? `≤${activeExpiryDays}d` : "Custom";
+  const creditsValue = coinMin || coinMax ? `${coinMin || "0"}–${coinMax || "∞"}` : null;
+  const planValue = planId === "none" ? "No plan" : planId ? plans.find((p) => p.id === planId)?.name ?? null : null;
+  const channelValue = hasWhatsapp && hasTelegram ? "WhatsApp + Telegram" : hasWhatsapp ? "WhatsApp" : hasTelegram ? "Telegram" : null;
+  const windowValue = windowFilter ? WINDOW_LABELS[windowFilter] ?? null : null;
+  const anyFilterActive = !!(expiryValue || creditsValue || planValue || channelValue || windowValue);
+
+  function clearAllFilters() {
+    navigate({ expiresBefore: null, expiresAfter: null, coinMin: null, coinMax: null, planId: null, hasWhatsapp: false, hasTelegram: false, windowFilter: null });
+    setCustomRangeOpen(false);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {selected.size > 0 && (
@@ -307,116 +324,97 @@ export function UsersTable({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = new FormData(e.currentTarget).get("search");
-            navigate({ search: String(value ?? "") });
-          }}
-          className="max-w-sm"
-        >
-          <TextField name="search" label="Search" placeholder="Name, email, WhatsApp or Telegram ID" defaultValue={search} />
-        </form>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("search");
+          navigate({ search: String(value ?? "") });
+        }}
+        className="max-w-sm"
+      >
+        <TextField name="search" label="Search" placeholder="Name, email, WhatsApp or Telegram ID" defaultValue={search} />
+      </form>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Expiry</span>
-          <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-            {EXPIRY_QUICK_FILTERS.map((f) => (
-              <button
-                key={f.label}
-                type="button"
-                onClick={() => {
-                  setCustomRangeOpen(false);
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+
+        <FilterPopover label="Expiry" value={expiryValue} onClear={() => { navigate({ expiresBefore: null, expiresAfter: null }); setCustomRangeOpen(false); }}>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              {EXPIRY_QUICK_FILTERS.map((f) => (
+                <FilterOption
+                  key={f.label}
+                  label={f.label}
+                  selected={f.days === null ? !expiresBefore && !expiresAfter : activeExpiryDays === f.days}
+                  onClick={() => {
+                    setCustomRangeOpen(false);
+                    navigate({ expiresBefore: f.days === null ? null : daysFromNowIso(f.days), expiresAfter: null });
+                  }}
+                />
+              ))}
+              <FilterOption label="Custom range…" selected={customRangeOpen} onClick={() => setCustomRangeOpen((v) => !v)} />
+            </div>
+            {customRangeOpen && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const data = new FormData(e.currentTarget);
+                  const from = data.get("from");
+                  const to = data.get("to");
                   navigate({
-                    expiresBefore: f.days === null ? null : daysFromNowIso(f.days),
-                    expiresAfter: null,
+                    expiresAfter: from ? new Date(String(from)).toISOString() : null,
+                    expiresBefore: to ? new Date(String(to)).toISOString() : null,
                   });
                 }}
-                className={cn(
-                  "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                  (f.days === null ? !expiresBefore && !expiresAfter : activeExpiryDays === f.days)
-                    ? "bg-surface text-ink shadow-soft"
-                    : "text-muted hover:text-ink",
-                )}
+                className="flex flex-col gap-2 border-t border-border pt-3"
               >
-                {f.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setCustomRangeOpen((v) => !v)}
-              className={cn(
-                "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                customRangeOpen ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-              )}
-            >
-              Custom range
-            </button>
+                <TextField name="from" type="date" label="From" />
+                <TextField name="to" type="date" label="To" />
+                <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover">
+                  Apply
+                </button>
+              </form>
+            )}
           </div>
-        </div>
+        </FilterPopover>
 
-        {customRangeOpen && (
+        <FilterPopover label="Credits" value={creditsValue} onClear={() => navigate({ coinMin: null, coinMax: null })}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
               const data = new FormData(e.currentTarget);
-              const from = data.get("from");
-              const to = data.get("to");
               navigate({
-                expiresAfter: from ? new Date(String(from)).toISOString() : null,
-                expiresBefore: to ? new Date(String(to)).toISOString() : null,
+                coinMin: data.get("coinMin") ? String(data.get("coinMin")) : null,
+                coinMax: data.get("coinMax") ? String(data.get("coinMax")) : null,
               });
             }}
-            className="flex items-end gap-2"
+            className="flex flex-col gap-2"
           >
-            <TextField name="from" type="date" label="From" />
-            <TextField name="to" type="date" label="To" />
-            <button type="submit" className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover">
+            <TextField name="coinMin" type="number" label="Min" defaultValue={coinMin} placeholder="0" />
+            <TextField name="coinMax" type="number" label="Max" defaultValue={coinMax} placeholder="Any" />
+            <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover">
               Apply
             </button>
           </form>
-        )}
+        </FilterPopover>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget);
-            navigate({
-              coinMin: data.get("coinMin") ? String(data.get("coinMin")) : null,
-              coinMax: data.get("coinMax") ? String(data.get("coinMax")) : null,
-            });
-          }}
-          className="flex items-end gap-2"
-        >
-          <TextField name="coinMin" type="number" label="Credits min" defaultValue={coinMin} placeholder="0" />
-          <TextField name="coinMax" type="number" label="Credits max" defaultValue={coinMax} placeholder="Any" />
-          <button type="submit" className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover">
-            Apply
-          </button>
-        </form>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Plan</span>
-          <select
-            value={planId}
-            onChange={(e) => navigate({ planId: e.target.value || null })}
-            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
-          >
-            <option value="">All</option>
-            <option value="none">No plan</option>
+        <FilterPopover label="Plan" value={planValue} onClear={() => navigate({ planId: null })}>
+          <div className="flex flex-col gap-1">
+            <FilterOption label="All" selected={!planId} onClick={() => navigate({ planId: null })} />
+            <FilterOption label="No plan" selected={planId === "none"} onClick={() => navigate({ planId: "none" })} />
             {plans.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+              <FilterOption key={p.id} label={p.name} selected={planId === p.id} onClick={() => navigate({ planId: p.id })} />
             ))}
-          </select>
-        </div>
+          </div>
+        </FilterPopover>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">Channel</span>
-          <div className="flex gap-3 rounded-lg border border-border bg-surface-warm px-3 py-2.5">
-            <label className="flex items-center gap-1.5 text-sm text-ink">
+        <FilterPopover
+          label="Channel"
+          value={channelValue}
+          onClear={() => navigate({ hasWhatsapp: false, hasTelegram: false })}
+        >
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink hover:bg-active-bg">
               <input
                 type="checkbox"
                 checked={hasWhatsapp}
@@ -425,7 +423,7 @@ export function UsersTable({
               />
               WhatsApp
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-ink">
+            <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink hover:bg-active-bg">
               <input
                 type="checkbox"
                 checked={hasTelegram}
@@ -435,20 +433,21 @@ export function UsersTable({
               Telegram
             </label>
           </div>
-        </div>
+        </FilterPopover>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-2">24h window</span>
-          <select
-            value={windowFilter}
-            onChange={(e) => navigate({ windowFilter: e.target.value || null })}
-            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
-          >
-            <option value="">Any</option>
-            <option value="within">Within 24h</option>
-            <option value="outside">Outside 24h</option>
-          </select>
-        </div>
+        <FilterPopover label="24h window" value={windowValue} onClear={() => navigate({ windowFilter: null })}>
+          <div className="flex flex-col gap-1">
+            <FilterOption label="Any" selected={!windowFilter} onClick={() => navigate({ windowFilter: null })} />
+            <FilterOption label="Within 24h" selected={windowFilter === "within"} onClick={() => navigate({ windowFilter: "within" })} />
+            <FilterOption label="Outside 24h" selected={windowFilter === "outside"} onClick={() => navigate({ windowFilter: "outside" })} />
+          </div>
+        </FilterPopover>
+
+        {anyFilterActive && (
+          <button type="button" onClick={clearAllFilters} className="text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
+            Clear filters
+          </button>
+        )}
       </div>
 
       <TableCard>
