@@ -1,18 +1,16 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
-import { adminBroadcastsRepo, BroadcastChannel } from "../../../lib/repositories/adminBroadcasts.repo";
+import { adminBroadcastsRepo, BroadcastChannel, MANUAL_SELECTION_AUDIENCE_FILTER } from "../../../lib/repositories/adminBroadcasts.repo";
 import { AudienceFilter, AUDIENCE_FILTER_LABELS } from "../../../lib/audienceFilter";
 import { SlotValue } from "../../../lib/broadcastFields";
-import { writeAuditLog } from "../../../lib/auditLog";
-import { runBroadcastCampaign } from "../../../lib/broadcastJob";
+import { createCampaignAndSend } from "../../../lib/broadcastCreate";
 
 export interface CreateBroadcastState {
   error: string | null;
 }
 
-async function startBroadcast(input: {
+async function startBroadcastFromFilter(input: {
   channel: BroadcastChannel;
   templateName: string | null;
   body: string;
@@ -21,41 +19,16 @@ async function startBroadcast(input: {
   auditAction: string;
 }): Promise<{ error: string | null }> {
   const audience = await adminBroadcastsRepo.getOptedInAudience(input.channel, input.audienceFilter);
-  if (audience.length === 0) {
-    return { error: `No matching opted-in, unblocked users are reachable on ${input.channel}.` };
-  }
-
-  const campaignId = await adminBroadcastsRepo.createCampaign({
+  return createCampaignAndSend({
     channel: input.channel,
     templateName: input.templateName,
     body: input.body,
+    userIds: audience.map((u) => u.id),
     audienceDescription: `${audience.length} ${AUDIENCE_FILTER_LABELS[input.audienceFilter].toLowerCase()} ${input.channel} users`,
     audienceFilter: input.audienceFilter,
-    createdBy: input.adminId,
+    adminId: input.adminId,
+    auditAction: input.auditAction,
   });
-  await adminBroadcastsRepo.insertRecipients(
-    campaignId,
-    audience.map((u) => u.id),
-  );
-
-  await writeAuditLog({
-    adminUserId: input.adminId,
-    action: input.auditAction,
-    targetTable: "broadcast_campaigns",
-    targetId: campaignId,
-    detail: { channel: input.channel, audienceSize: audience.length, templateName: input.templateName },
-  });
-
-  // Fire-and-forget: this app runs as a long-lived pm2 process (not
-  // serverless), so the promise keeps running after the action returns.
-  // Errors inside are caught per-recipient; a total failure to start still
-  // needs a catch here so it can't reject silently.
-  runBroadcastCampaign(campaignId, input.channel, input.templateName, input.body).catch(() => {
-    adminBroadcastsRepo.setCampaignStatus(campaignId, "failed");
-  });
-
-  revalidatePath("/broadcasts");
-  return { error: null };
 }
 
 export async function createAndSendBroadcastAction(
@@ -79,13 +52,14 @@ export async function createAndSendBroadcastAction(
     } catch {
       return { error: "Invalid variable mapping." };
     }
-    body = JSON.stringify({ languageCode, slots });
+    const bodyText = String(formData.get("bodyText") ?? "").trim() || null;
+    body = JSON.stringify({ languageCode, slots, bodyText });
   } else {
     body = String(formData.get("message") ?? "").trim();
     if (!body) return { error: "Enter a message." };
   }
 
-  return startBroadcast({
+  return startBroadcastFromFilter({
     channel,
     templateName,
     body,
@@ -100,7 +74,25 @@ export async function resendCampaignAction(campaignId: string): Promise<{ error:
   const campaign = await adminBroadcastsRepo.getCampaignById(campaignId);
   if (!campaign) return { error: "Campaign not found." };
 
-  return startBroadcast({
+  // A manual-selection campaign has no filter to re-run — "re-derive
+  // everyone currently matching" would silently drift the audience over
+  // time, wrong for a deliberately hand-picked list. Resend to the exact
+  // same people instead.
+  if (campaign.audience_filter === MANUAL_SELECTION_AUDIENCE_FILTER) {
+    const userIds = await adminBroadcastsRepo.getCampaignRecipientUserIds(campaignId);
+    return createCampaignAndSend({
+      channel: campaign.channel,
+      templateName: campaign.template_name,
+      body: campaign.body,
+      userIds,
+      audienceDescription: `${userIds.length} selected users (resend)`,
+      audienceFilter: MANUAL_SELECTION_AUDIENCE_FILTER,
+      adminId: admin.id,
+      auditAction: "broadcast.resend",
+    });
+  }
+
+  return startBroadcastFromFilter({
     channel: campaign.channel,
     templateName: campaign.template_name,
     body: campaign.body,

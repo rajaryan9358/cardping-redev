@@ -3,18 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Bell, MessageSquare } from "lucide-react";
+import { MessageSquare, Megaphone, History, X } from "lucide-react";
+import { Button } from "../../../components/ui/Button";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
 import { Pagination } from "../../../components/ui/Pagination";
 import { TextField } from "../../../components/ui/TextField";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
-import { ChannelContactRow } from "../../../lib/repositories/adminUsers.repo";
+import { ChannelContactRow, WindowFilter } from "../../../lib/repositories/adminUsers.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
 import { saveListNavState, restoreListScroll } from "../../../lib/listNavState";
-import { sendLowBalanceAlertAction } from "./actions";
 import { SendMessageModal, SendMessageTarget } from "./SendMessageModal";
+import { BroadcastToUsersModal } from "./BroadcastToUsersModal";
+import { BroadcastHistoryModal } from "./BroadcastHistoryModal";
 
 export function ContactsTable({
   channel,
@@ -24,6 +26,7 @@ export function ContactsTable({
   pageSize,
   search,
   sort,
+  windowFilter,
 }: {
   channel: "whatsapp" | "telegram";
   rows: ChannelContactRow[];
@@ -32,18 +35,35 @@ export function ContactsTable({
   pageSize: number;
   search: string;
   sort: string;
+  windowFilter: string;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [messageTarget, setMessageTarget] = useState<ChannelContactRow | null>(null);
-  const [alertingFor, setAlertingFor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // null = closed; otherwise the exact ids to broadcast to (empty array =
+  // "everyone matching the current filters", not "nobody").
+  const [broadcastTargetIds, setBroadcastTargetIds] = useState<string[] | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
 
   useEffect(() => {
     restoreListScroll(pathname, searchParams.toString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function navigate(next: { page?: number; pageSize?: number; search?: string; sort?: string }) {
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
+  }
+
+  function navigate(next: { page?: number; pageSize?: number; search?: string; sort?: string; windowFilter?: string | null }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.search !== undefined) {
       params.set("search", next.search);
@@ -51,6 +71,10 @@ export function ContactsTable({
     }
     if (next.sort !== undefined) {
       next.sort ? params.set("sort", next.sort) : params.delete("sort");
+    }
+    if (next.windowFilter !== undefined) {
+      next.windowFilter ? params.set("window", next.windowFilter) : params.delete("window");
+      params.set("page", "1");
     }
     if (next.pageSize !== undefined) {
       params.set("pageSize", String(next.pageSize));
@@ -61,35 +85,66 @@ export function ContactsTable({
     window.location.href = `/admin${pathname}?${params.toString()}`;
   }
 
-  async function handleSendLowBalanceAlert(userId: string) {
-    setAlertingFor(userId);
-    try {
-      await sendLowBalanceAlertAction(userId);
-    } finally {
-      setAlertingFor(null);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const value = new FormData(e.currentTarget).get("search");
-          navigate({ search: String(value ?? "") });
-        }}
-        className="max-w-sm"
-      >
-        <TextField
-          name="search"
-          label="Search"
-          placeholder={channel === "whatsapp" ? "Name, email, or WhatsApp number" : "Name, email, or Telegram ID"}
-          defaultValue={search}
-        />
-      </form>
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-white">
+          <div className="flex items-center gap-4 text-sm">
+            <span className="font-semibold">{selected.size} selected</span>
+            <button type="button" onClick={() => setSelected(new Set())} className="flex items-center gap-1 text-white/70 hover:text-white">
+              <X className="size-3.5" /> Clear
+            </button>
+          </div>
+          <Button variant="secondary" className="gap-1.5 py-1.5" onClick={() => setBroadcastTargetIds(Array.from(selected))}>
+            <Megaphone className="size-3.5" strokeWidth={2} /> Broadcast message
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = new FormData(e.currentTarget).get("search");
+            navigate({ search: String(value ?? "") });
+          }}
+          className="max-w-sm"
+        >
+          <TextField
+            name="search"
+            label="Search"
+            placeholder={channel === "whatsapp" ? "Name, email, or WhatsApp number" : "Name, email, or Telegram ID"}
+            defaultValue={search}
+          />
+        </form>
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">24h window</span>
+          <select
+            value={windowFilter}
+            onChange={(e) => navigate({ windowFilter: e.target.value || null })}
+            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
+          >
+            <option value="">Any</option>
+            <option value="within">Within 24h</option>
+            <option value="outside">Outside 24h</option>
+          </select>
+        </div>
+        <Button variant="secondary" className="gap-1.5" onClick={() => setBroadcastTargetIds([])} disabled={total === 0}>
+          <Megaphone className="size-4" strokeWidth={2} />
+          Broadcast to filtered
+        </Button>
+      </div>
 
       <TableCard>
         <TableHeaderRow>
+          <Th className="flex-none w-10">
+            <input
+              type="checkbox"
+              checked={rows.length > 0 && selected.size === rows.length}
+              onChange={toggleAll}
+              className="size-4 rounded border-border text-accent"
+            />
+          </Th>
           <Th>Contact</Th>
           <Th>Credits</Th>
           <SortableTh field="created_at" label="First contacted" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
@@ -99,6 +154,14 @@ export function ContactsTable({
         {rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No contacts found.</p>}
         {rows.map((contact) => (
           <Tr key={contact.id}>
+            <Td className="flex-none w-10">
+              <input
+                type="checkbox"
+                checked={selected.has(contact.id)}
+                onChange={() => toggle(contact.id)}
+                className="size-4 rounded border-border text-accent"
+              />
+            </Td>
             <Td>
               <Link
                 href={`/users/${contact.id}`}
@@ -113,7 +176,7 @@ export function ContactsTable({
             <Td align="right">{formatDate(contact.created_at)}</Td>
             <Td align="right">{contact.last_login ? formatDate(contact.last_login) : "—"}</Td>
             <Td align="right">
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-2">
                 <RowActionsMenu
                   actions={[
                     {
@@ -122,10 +185,9 @@ export function ContactsTable({
                       onClick: () => setMessageTarget(contact),
                     },
                     {
-                      label: "Low-balance alert",
-                      icon: <Bell className="size-3.5" strokeWidth={2} />,
-                      onClick: () => handleSendLowBalanceAlert(contact.id),
-                      disabled: channel !== "whatsapp" || alertingFor === contact.id,
+                      label: "Broadcast history",
+                      icon: <History className="size-3.5" strokeWidth={2} />,
+                      onClick: () => setHistoryTarget(contact.id),
                     },
                   ]}
                 />
@@ -158,6 +220,16 @@ export function ContactsTable({
         }
         onClose={() => setMessageTarget(null)}
       />
+
+      <BroadcastToUsersModal
+        open={broadcastTargetIds !== null}
+        source={channel === "whatsapp" ? "whatsapp_contacts" : "telegram_contacts"}
+        selectedIds={broadcastTargetIds ?? []}
+        filters={{ search, sort, windowFilter: (windowFilter || undefined) as WindowFilter | undefined }}
+        onClose={() => setBroadcastTargetIds(null)}
+      />
+
+      <BroadcastHistoryModal userIds={historyTarget ? [historyTarget] : null} onClose={() => setHistoryTarget(null)} />
     </div>
   );
 }

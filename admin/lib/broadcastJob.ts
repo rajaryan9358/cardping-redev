@@ -1,25 +1,37 @@
 import "server-only";
 import { adminBroadcastsRepo, AdminCampaignRow } from "./repositories/adminBroadcasts.repo";
-import { sendTelegramBroadcastMessage, sendWhatsAppTemplate } from "./broadcastSend";
-import { resolveField, sanitizeForWhatsApp, substituteTelegramTokens } from "./broadcastFieldResolver";
+import { sendTelegramBroadcastMessage, sendWhatsAppTemplate, sendWhatsAppText } from "./broadcastSend";
+import { fillTemplateBody, resolveField, sanitizeForWhatsApp, substituteTelegramTokens } from "./broadcastFieldResolver";
 import { SlotValue } from "./broadcastFields";
 
 const SEND_DELAY_MS = 300;
+const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
 
 interface WhatsAppBody {
   languageCode: string;
   slots: SlotValue[];
+  // The template's actual body text, captured at compose time — lets a
+  // recipient inside their 24h window get the natural free-text version
+  // instead of the formal template (see the send loop below). null for
+  // the manual-template-entry fallback and for any pre-existing campaign,
+  // both of which always go through the template path regardless of window.
+  bodyText: string | null;
 }
 
 // A campaign created before per-recipient variables shipped has body
 // shape {languageCode, variables: string[]} — every slot was a literal,
-// campaign-wide string. Resending one of those must keep working, so a
-// legacy `variables` array is treated as all-literal slots rather than
-// rejected outright.
-function normalizeWhatsAppBody(parsed: { languageCode: string; slots?: SlotValue[]; variables?: string[] }): WhatsAppBody {
-  if (parsed.slots) return { languageCode: parsed.languageCode, slots: parsed.slots };
+// campaign-wide string, and bodyText didn't exist yet. Resending one of
+// these must keep working, so a legacy `variables` array is treated as
+// all-literal slots (with no known bodyText) rather than rejected outright.
+function normalizeWhatsAppBody(parsed: {
+  languageCode: string;
+  slots?: SlotValue[];
+  variables?: string[];
+  bodyText?: string | null;
+}): WhatsAppBody {
+  if (parsed.slots) return { languageCode: parsed.languageCode, slots: parsed.slots, bodyText: parsed.bodyText ?? null };
   const variables = parsed.variables ?? [];
-  return { languageCode: parsed.languageCode, slots: variables.map((value) => ({ type: "literal", value })) };
+  return { languageCode: parsed.languageCode, slots: variables.map((value) => ({ type: "literal", value })), bodyText: null };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -68,7 +80,17 @@ export async function runBroadcastCampaign(
         const variables = whatsAppBody.slots.map((slot) =>
           slot.type === "literal" ? sanitizeForWhatsApp(slot.value) : resolveField(slot.field, recipient, planNamesById),
         );
-        await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, variables);
+        const within24h = recipient.last_login && Date.now() - new Date(recipient.last_login).getTime() < WITHIN_24H_MS;
+        if (within24h && whatsAppBody.bodyText) {
+          // Inside the window, free text is both allowed and more natural
+          // than the formal template mechanism — same content, friendlier
+          // delivery. A mixed audience (some recipients active recently,
+          // some not) is exactly why this is decided per-recipient, not
+          // once for the whole campaign.
+          await sendWhatsAppText(to, fillTemplateBody(whatsAppBody.bodyText, variables));
+        } else {
+          await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, variables);
+        }
       } else {
         const chatId = recipient.telegram_chat_id;
         if (!chatId) throw new Error("User has no telegram_chat_id");

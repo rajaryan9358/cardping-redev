@@ -81,7 +81,8 @@ export async function sendRenewalReminderAction(userId: string): Promise<void> {
 
   await sendNotification({
     userId,
-    waId,
+    channel: "whatsapp",
+    identifier: waId,
     type: "renewal_reminder",
     triggeredBy: "manual",
     adminUserId: admin.id,

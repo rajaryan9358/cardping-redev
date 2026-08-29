@@ -39,11 +39,24 @@ const SORTABLE_FIELDS: Record<string, string> = {
   created_at: "created_at",
 };
 
+export type WindowFilter = "within" | "outside";
+
 export interface ListUsersParams {
   search?: string;
   status?: UserStatusFilter;
   expiresBefore?: string;
   expiresAfter?: string;
+  coinMin?: number;
+  coinMax?: number;
+  // "none" = accounts with no plan at all; otherwise a real plans.id
+  planId?: string;
+  hasWhatsapp?: boolean;
+  hasTelegram?: boolean;
+  // WhatsApp's 24h customer-service window, based on the most recent
+  // last_login across every linked channel — "within" means at least one
+  // linked identity messaged within the last 24h (reachable by free text
+  // right now on some channel), "outside" means none did.
+  windowFilter?: WindowFilter;
   sort?: string;
   page: number;
   pageSize: number;
@@ -158,6 +171,41 @@ function matchesSearch(term: string, fields: (string | null)[]): boolean {
   return fields.some((f) => f?.toLowerCase().includes(needle));
 }
 
+function matchesCoinRange(coinBalance: number, coinMin?: number, coinMax?: number): boolean {
+  if (coinMin !== undefined && coinBalance < coinMin) return false;
+  if (coinMax !== undefined && coinBalance > coinMax) return false;
+  return true;
+}
+
+function matchesPlan(planId: string | null, filterPlanId?: string): boolean {
+  if (!filterPlanId) return true;
+  if (filterPlanId === "none") return planId === null;
+  return planId === filterPlanId;
+}
+
+function matchesChannel(accountLinks: RawChannelLink[], hasWhatsapp?: boolean, hasTelegram?: boolean): boolean {
+  if (hasWhatsapp && !accountLinks.some((l) => l.channel === "whatsapp")) return false;
+  if (hasTelegram && !accountLinks.some((l) => l.channel === "telegram")) return false;
+  return true;
+}
+
+const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
+
+function matchesWindow(lastLogin: string | null, windowFilter?: WindowFilter): boolean {
+  if (!windowFilter) return true;
+  const isWithin = !!lastLogin && Date.now() - new Date(lastLogin).getTime() < WITHIN_24H_MS;
+  return windowFilter === "within" ? isWithin : !isWithin;
+}
+
+/** The most recent last_login across an account's linked channel
+ * identities — an account within its 24h window on ANY linked channel
+ * counts as "within" (see ListUsersParams.windowFilter's doc comment). */
+function mostRecentLastLogin(accountLinks: RawChannelLink[], lastLoginByUsersId: Map<string, string | null>): string | null {
+  const logins = accountLinks.map((l) => lastLoginByUsersId.get(l.users_id)).filter((v): v is string => !!v);
+  if (logins.length === 0) return null;
+  return logins.reduce((latest, current) => (new Date(current).getTime() > new Date(latest).getTime() ? current : latest));
+}
+
 export type ListUsersFilterParams = Omit<ListUsersParams, "page" | "pageSize">;
 
 /** Fetches + filters + sorts every matching row, unpaginated — shared by
@@ -173,6 +221,12 @@ async function buildFilteredUserRows({
   status,
   expiresBefore,
   expiresAfter,
+  coinMin,
+  coinMax,
+  planId,
+  hasWhatsapp,
+  hasTelegram,
+  windowFilter,
   sort,
 }: ListUsersFilterParams): Promise<AdminUserListRow[]> {
   const [{ data: accounts, error: accErr }, { data: links, error: linkErr }] = await Promise.all([
@@ -194,12 +248,26 @@ async function buildFilteredUserRows({
     linksByAccount.set(link.account_id, arr);
   }
 
+  // last_login lives on `users` (per channel identity), not `accounts` —
+  // fetched here so the 24h-window filter and the row's own displayed
+  // "last seen" both reflect real activity instead of the previously
+  // hardcoded `null`.
+  const activeUsersIds = Array.from(linksByAccount.values()).flatMap((accountLinks) => accountLinks.map((l) => l.users_id));
+  const { data: usersLastLogin, error: llErr } =
+    activeUsersIds.length > 0 ? await supabase.from("users").select("id, last_login").in("id", activeUsersIds) : { data: [], error: null };
+  if (llErr) throw llErr;
+  const lastLoginByUsersId = new Map<string, string | null>((usersLastLogin ?? []).map((u) => [u.id, u.last_login]));
+
   const term = search?.trim();
   const nowMs = Date.now();
 
   const accountRows: AdminUserListRow[] = ((accounts ?? []) as RawAccount[])
     .filter((a) => matchesStatus(status, a.blocked_at, a.plan_id, a.plan_expires_at, a.coin_balance, nowMs, a.full_name, a.email))
     .filter((a) => matchesExpiry(a.plan_id, a.plan_expires_at, expiresBefore, expiresAfter))
+    .filter((a) => matchesCoinRange(a.coin_balance, coinMin, coinMax))
+    .filter((a) => matchesPlan(a.plan_id, planId))
+    .filter((a) => matchesChannel(linksByAccount.get(a.id) ?? [], hasWhatsapp, hasTelegram))
+    .filter((a) => matchesWindow(mostRecentLastLogin(linksByAccount.get(a.id) ?? [], lastLoginByUsersId), windowFilter))
     .filter((a) => !term || matchesSearch(term, [a.email, a.full_name]))
     .map((a) => {
       const accountLinks = linksByAccount.get(a.id) ?? [];
@@ -219,7 +287,7 @@ async function buildFilteredUserRows({
         subscription_tier: null,
         marketing_opt_in: false,
         created_at: a.created_at,
-        last_login: null,
+        last_login: mostRecentLastLogin(accountLinks, lastLoginByUsersId),
         effective_coin_balance: a.coin_balance,
         effective_blocked_at: a.blocked_at,
         effective_plan_id: a.plan_id,
@@ -252,6 +320,45 @@ async function listUsers(params: ListUsersParams): Promise<Paginated<AdminUserLi
 
 async function listUsersForExport(params: ListUsersFilterParams): Promise<AdminUserListRow[]> {
   return buildFilteredUserRows(params);
+}
+
+/** Every accountId matching the current Accounts-tab filters — used for
+ * "broadcast to filtered users" when nothing is checked (the full
+ * matching set, not just the current page). */
+async function listAccountIdsMatchingFilters(params: ListUsersFilterParams): Promise<string[]> {
+  const rows = await buildFilteredUserRows(params);
+  return rows.map((r) => r.id);
+}
+
+/** Maps each selected accountId to its linked (currently-active) users.id
+ * for the given channel — broadcast_recipients.user_id is always a bare
+ * channel identity, never an accountId, so an Accounts-tab broadcast needs
+ * this hop. An account with no linked identity on that channel is silently
+ * dropped (nothing to send to); an account linked on both channels only
+ * contributes the one matching this broadcast's channel. */
+async function resolveChannelUsersIdsForAccounts(accountIds: string[], channel: Channel): Promise<string[]> {
+  if (accountIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("channel_links")
+    .select("account_id, users_id, channel")
+    .in("account_id", accountIds)
+    .eq("channel", channel)
+    .is("unlinked_at", null);
+  if (error) throw error;
+  return (data ?? []).map((l) => l.users_id);
+}
+
+/** Drops any id whose channel identity is blocked — same floor
+ * getOptedInAudience/getContactedNeverSignedUpAudience already apply for
+ * dropdown-driven broadcasts, applied here for the explicit-selection
+ * path too (a hand-picked list can still include someone blocked after
+ * the admin last looked). */
+async function filterOutBlockedUserIds(userIds: string[]): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const { data, error } = await supabase.from("users").select("id, blocked_at").in("id", userIds);
+  if (error) throw error;
+  const blocked = new Set((data ?? []).filter((u) => u.blocked_at !== null).map((u) => u.id));
+  return userIds.filter((id) => !blocked.has(id));
 }
 
 /** Every `users.id` that has ANY `channel_links` row, regardless of
@@ -291,6 +398,7 @@ interface RawContactUser {
 export interface ListChannelContactsParams {
   search?: string;
   sort?: string;
+  windowFilter?: WindowFilter;
   page: number;
   pageSize: number;
 }
@@ -307,7 +415,10 @@ const CONTACT_SORTABLE_FIELDS: Record<string, string> = {
  * no multi-channel union — just the bare channel identity. A row with
  * both wa_id and telegram_id set legitimately appears in both channels'
  * lists, since it did contact via both. */
-async function buildChannelContactRows(channel: Channel, { search, sort }: { search?: string; sort?: string }): Promise<ChannelContactRow[]> {
+async function buildChannelContactRows(
+  channel: Channel,
+  { search, sort, windowFilter }: { search?: string; sort?: string; windowFilter?: WindowFilter },
+): Promise<ChannelContactRow[]> {
   const idColumn = CHANNEL_ID_COLUMN[channel];
   const [linkedIds, { data: users, error }] = await Promise.all([
     getLinkedUsersIdSet(),
@@ -330,7 +441,8 @@ async function buildChannelContactRows(channel: Channel, { search, sort }: { sea
       created_at: u.created_at,
       last_login: u.last_login,
     }))
-    .filter((r) => !term || [r.full_name, r.email, r.identifier].some((f) => f?.toLowerCase().includes(term)));
+    .filter((r) => !term || [r.full_name, r.email, r.identifier].some((f) => f?.toLowerCase().includes(term)))
+    .filter((r) => matchesWindow(r.last_login, windowFilter));
 
   const parsedSort = parseSort(sort);
   const sortField = parsedSort && CONTACT_SORTABLE_FIELDS[parsedSort.field] ? parsedSort.field : "created_at";
@@ -351,6 +463,18 @@ async function listChannelContacts(channel: Channel, params: ListChannelContacts
   const allRows = await buildChannelContactRows(channel, params);
   const from = (params.page - 1) * params.pageSize;
   return { rows: allRows.slice(from, from + params.pageSize), total: allRows.length };
+}
+
+/** Every contact id matching the current filters on a Contacts tab —
+ * same "broadcast to filtered users with nothing checked" use as
+ * listAccountIdsMatchingFilters. These ids are already bare users.id for
+ * this exact channel, so no resolveChannelUsersIdsForAccounts hop needed. */
+async function listChannelContactIdsMatchingFilters(
+  channel: Channel,
+  params: { search?: string; sort?: string; windowFilter?: WindowFilter },
+): Promise<string[]> {
+  const rows = await buildChannelContactRows(channel, params);
+  return rows.map((r) => r.id);
 }
 
 /** `id` is whatever the route was reached with — tries it as an accountId
@@ -419,6 +543,41 @@ async function getUserDetail(id: string): Promise<AdminUserDetail | null> {
   // only for group/topic chats (see users.repo.ts in server/).
   if (user.telegram_id) channels.push({ channel: "telegram", identifier: user.telegram_chat_id || user.telegram_id, usersId: user.id });
 
+  // This id is a bare channel identity (users.id), not an accountId — but
+  // it can still BE linked to an account (e.g. reached via UsersTable's
+  // detail_user_id, one of an "account" row's own linked channels). If so,
+  // the linked account's columns are the real effective values (same
+  // precedence user_with_event's coalesce uses) — the raw `users` columns
+  // read here can be stale/zero for a linked identity. A genuinely
+  // unlinked bot contact (no active channel_links row) just falls through
+  // to the plain `user.*` values below, unchanged.
+  const { data: link, error: linkErr } = await supabase
+    .from("channel_links")
+    .select("account_id")
+    .eq("users_id", id)
+    .is("unlinked_at", null)
+    .maybeSingle();
+  if (linkErr) throw linkErr;
+
+  let effectiveCoinBalance = user.coin_balance;
+  let effectiveBlockedAt = user.blocked_at;
+  let effectivePlanId = user.plan_id;
+  let effectivePlanExpiresAt = user.plan_expires_at;
+  if (link) {
+    const { data: linkedAccount, error: accountErr } = await supabase
+      .from("accounts")
+      .select("coin_balance, blocked_at, plan_id, plan_expires_at")
+      .eq("id", link.account_id)
+      .maybeSingle();
+    if (accountErr) throw accountErr;
+    if (linkedAccount) {
+      effectiveCoinBalance = linkedAccount.coin_balance;
+      effectiveBlockedAt = linkedAccount.blocked_at;
+      effectivePlanId = linkedAccount.plan_id;
+      effectivePlanExpiresAt = linkedAccount.plan_expires_at;
+    }
+  }
+
   return {
     id: user.id,
     kind: "unlinked_user",
@@ -430,10 +589,10 @@ async function getUserDetail(id: string): Promise<AdminUserDetail | null> {
     marketing_opt_in: user.marketing_opt_in,
     created_at: user.created_at,
     last_login: user.last_login,
-    effective_coin_balance: user.coin_balance,
-    effective_blocked_at: user.blocked_at,
-    effective_plan_id: user.plan_id,
-    effective_plan_expires_at: user.plan_expires_at,
+    effective_coin_balance: effectiveCoinBalance,
+    effective_blocked_at: effectiveBlockedAt,
+    effective_plan_id: effectivePlanId,
+    effective_plan_expires_at: effectivePlanExpiresAt,
   };
 }
 
@@ -704,7 +863,11 @@ async function adjustAccountCoins(accountId: string, delta: number, reason: stri
 export const adminUsersRepo = {
   listUsers,
   listUsersForExport,
+  listAccountIdsMatchingFilters,
   listChannelContacts,
+  listChannelContactIdsMatchingFilters,
+  resolveChannelUsersIdsForAccounts,
+  filterOutBlockedUserIds,
   getUserDetail,
   getUserEvents,
   getUserCards,

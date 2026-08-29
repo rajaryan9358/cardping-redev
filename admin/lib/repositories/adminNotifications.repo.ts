@@ -90,6 +90,7 @@ async function findLowBalanceCandidates(): Promise<LowBalanceCandidate[]> {
 
 async function logNotification(input: {
   userId: string;
+  channel?: "whatsapp" | "telegram";
   type: NotificationType;
   triggeredBy: NotificationTriggeredBy;
   status: NotificationStatus;
@@ -98,6 +99,7 @@ async function logNotification(input: {
 }): Promise<void> {
   const { error } = await supabase.from("notification_log").insert({
     user_id: input.userId,
+    channel: input.channel ?? "whatsapp",
     type: input.type,
     triggered_by: input.triggeredBy,
     status: input.status,

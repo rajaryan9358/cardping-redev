@@ -3,9 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
 import { adminUsersRepo } from "../../../lib/repositories/adminUsers.repo";
+import { adminBroadcastsRepo, BroadcastHistoryEntry } from "../../../lib/repositories/adminBroadcasts.repo";
 import { writeAuditLog } from "../../../lib/auditLog";
 import { sendNotification } from "../../../lib/notificationSend";
 import { sendWhatsAppTemplate, sendWhatsAppText, sendTelegramBroadcastMessage } from "../../../lib/broadcastSend";
+import { SlotValue } from "../../../lib/broadcastFields";
+import { resolveField, sanitizeForWhatsApp } from "../../../lib/broadcastFieldResolver";
 
 const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
 
@@ -16,6 +19,10 @@ export interface SendMessageInput {
   /** WhatsApp outside the 24h window: an approved template instead. */
   templateName?: string;
   languageCode?: string;
+  /** Per-slot literal/field mapping for the template's {{n}} variables —
+   * same shape the broadcast composer collects. Omitted (or empty) for a
+   * manually-typed template name, where the slot count isn't known. */
+  slots?: SlotValue[];
 }
 
 export async function sendMessageAction(userId: string, input: SendMessageInput): Promise<void> {
@@ -37,7 +44,22 @@ export async function sendMessageAction(userId: string, input: SendMessageInput)
       await sendWhatsAppText(waId, input.body.trim());
     } else {
       if (!input.templateName) throw new Error("This user is outside the 24h window — pick a template.");
-      await sendWhatsAppTemplate(waId, input.templateName, input.languageCode || "en", []);
+      // Resolved here, not in the modal — the modal only knows the slot
+      // mapping (literal text or "use this field"); the actual field
+      // values (this user's real name/credits/plan) only need to be known
+      // server-side, right before sending.
+      const planNamesById = await adminBroadcastsRepo.getPlanNamesById();
+      const recipient = {
+        full_name: user.full_name,
+        wa_id: waId,
+        effective_coin_balance: user.effective_coin_balance,
+        effective_plan_id: user.effective_plan_id,
+        effective_plan_expires_at: user.effective_plan_expires_at,
+      };
+      const variables = (input.slots ?? []).map((slot) =>
+        slot.type === "literal" ? sanitizeForWhatsApp(slot.value) : resolveField(slot.field, recipient, planNamesById),
+      );
+      await sendWhatsAppTemplate(waId, input.templateName, input.languageCode || "en", variables);
     }
   }
 
@@ -79,16 +101,20 @@ export async function setAccountBlockedAction(accountId: string, blocked: boolea
   revalidatePath("/users");
 }
 
-export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
+export async function sendLowBalanceAlertAction(
+  userId: string,
+  channel: "whatsapp" | "telegram" = "whatsapp",
+): Promise<{ sent: boolean; error?: string }> {
   const admin = await requireAdmin();
   const user = await adminUsersRepo.getUserDetail(userId);
   if (!user) throw new Error("User not found.");
-  const waId = user.channels.find((c) => c.channel === "whatsapp")?.identifier;
-  if (!waId) throw new Error("This user has no WhatsApp number on file.");
+  const identifier = user.channels.find((c) => c.channel === channel)?.identifier;
+  if (!identifier) throw new Error(`This user has no ${channel === "whatsapp" ? "WhatsApp number" : "Telegram chat"} on file.`);
 
-  await sendNotification({
+  const result = await sendNotification({
     userId,
-    waId,
+    channel,
+    identifier,
     type: "low_balance_alert",
     triggeredBy: "manual",
     adminUserId: admin.id,
@@ -100,9 +126,20 @@ export async function sendLowBalanceAlertAction(userId: string): Promise<void> {
     action: "user.send_low_balance_alert",
     targetTable: "users",
     targetId: userId,
+    detail: { channel, sent: result.sent },
   });
 
   revalidatePath("/notifications");
+  return result;
+}
+
+/** Every broadcast campaign this person was a recipient of, most recent
+ * first — `userIds` is every linked channel identity for an "account" row
+ * (see AdminUserListRow.userIds) or just the one bare users.id for a
+ * Contacts-tab row. */
+export async function getBroadcastHistoryAction(userIds: string[]): Promise<BroadcastHistoryEntry[]> {
+  await requireAdmin();
+  return adminBroadcastsRepo.getBroadcastHistoryForUsers(userIds);
 }
 
 export async function setMarketingOptInAction(userId: string, optIn: boolean): Promise<void> {

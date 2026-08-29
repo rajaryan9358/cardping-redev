@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Ban, CheckCircle2, IdCard, Pencil, Trash2, X, Download } from "lucide-react";
+import { MessageCircle, Send, Coins, CreditCard, Bell, MessageSquare, Megaphone, History, Ban, CheckCircle2, IdCard, Pencil, Trash2, X, Download } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { TableCard, TableHeaderRow, Th, Tr, Td } from "../../../components/ui/Table";
 import { SortableTh } from "../../../components/ui/SortableTh";
@@ -13,7 +13,7 @@ import { TextField } from "../../../components/ui/TextField";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { RowActionsMenu } from "../../../components/ui/RowActionsMenu";
 import { cn } from "@/lib/cn";
-import { AdminUserListRow } from "../../../lib/repositories/adminUsers.repo";
+import { AdminUserListRow, UserStatusFilter, WindowFilter } from "../../../lib/repositories/adminUsers.repo";
 import { Plan } from "../../../lib/repositories/adminSubscriptions.repo";
 import { nextSortValue } from "../../../lib/sort";
 import { formatDate } from "../../../lib/format";
@@ -33,6 +33,8 @@ import { AdjustCoinsModal } from "./AdjustCoinsModal";
 import { EditUserModal } from "./EditUserModal";
 import { ChangePlanModal } from "../../../components/subscriptions/ChangePlanModal";
 import { SendMessageModal, SendMessageTarget } from "./SendMessageModal";
+import { BroadcastToUsersModal } from "./BroadcastToUsersModal";
+import { BroadcastHistoryModal } from "./BroadcastHistoryModal";
 
 const STATUS_TABS = [
   { value: "", label: "All" },
@@ -64,6 +66,12 @@ export function UsersTable({
   status,
   expiresBefore,
   expiresAfter,
+  coinMin,
+  coinMax,
+  planId,
+  hasWhatsapp,
+  hasTelegram,
+  windowFilter,
   sort,
   plans,
   lowBalanceThreshold,
@@ -76,6 +84,12 @@ export function UsersTable({
   status: string;
   expiresBefore: string;
   expiresAfter: string;
+  coinMin: string;
+  coinMax: string;
+  planId: string;
+  hasWhatsapp: boolean;
+  hasTelegram: boolean;
+  windowFilter: string;
   sort: string;
   plans: Plan[];
   lowBalanceThreshold: number;
@@ -92,8 +106,28 @@ export function UsersTable({
   const [deleteAck, setDeleteAck] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [alertingFor, setAlertingFor] = useState<string | null>(null);
+  const [alertResult, setAlertResult] = useState<{ id: string; ok: boolean } | null>(null);
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // null = closed; otherwise the exact ids to broadcast to (empty array =
+  // "everyone matching the current filters", not "nobody" — see
+  // BroadcastToUsersModal).
+  const [broadcastTargetIds, setBroadcastTargetIds] = useState<string[] | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<AdminUserListRow | null>(null);
+
+  const currentFilters = {
+    search,
+    status: (status || undefined) as UserStatusFilter | undefined,
+    expiresBefore: expiresBefore || undefined,
+    expiresAfter: expiresAfter || undefined,
+    coinMin: coinMin ? Number(coinMin) : undefined,
+    coinMax: coinMax ? Number(coinMax) : undefined,
+    planId: planId || undefined,
+    hasWhatsapp: hasWhatsapp || undefined,
+    hasTelegram: hasTelegram || undefined,
+    windowFilter: (windowFilter || undefined) as WindowFilter | undefined,
+    sort: sort || undefined,
+  };
 
   useEffect(() => {
     restoreListScroll(pathname, searchParams.toString());
@@ -138,6 +172,12 @@ export function UsersTable({
     status?: string;
     expiresBefore?: string | null;
     expiresAfter?: string | null;
+    coinMin?: string | null;
+    coinMax?: string | null;
+    planId?: string | null;
+    hasWhatsapp?: boolean | null;
+    hasTelegram?: boolean | null;
+    windowFilter?: string | null;
     sort?: string;
   }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -155,6 +195,30 @@ export function UsersTable({
     }
     if (next.expiresAfter !== undefined) {
       next.expiresAfter ? params.set("expiresAfter", next.expiresAfter) : params.delete("expiresAfter");
+      params.set("page", "1");
+    }
+    if (next.coinMin !== undefined) {
+      next.coinMin ? params.set("coinMin", next.coinMin) : params.delete("coinMin");
+      params.set("page", "1");
+    }
+    if (next.coinMax !== undefined) {
+      next.coinMax ? params.set("coinMax", next.coinMax) : params.delete("coinMax");
+      params.set("page", "1");
+    }
+    if (next.planId !== undefined) {
+      next.planId ? params.set("planId", next.planId) : params.delete("planId");
+      params.set("page", "1");
+    }
+    if (next.hasWhatsapp !== undefined) {
+      next.hasWhatsapp ? params.set("hasWhatsapp", "1") : params.delete("hasWhatsapp");
+      params.set("page", "1");
+    }
+    if (next.hasTelegram !== undefined) {
+      next.hasTelegram ? params.set("hasTelegram", "1") : params.delete("hasTelegram");
+      params.set("page", "1");
+    }
+    if (next.windowFilter !== undefined) {
+      next.windowFilter ? params.set("window", next.windowFilter) : params.delete("window");
       params.set("page", "1");
     }
     if (next.sort !== undefined) {
@@ -175,11 +239,16 @@ export function UsersTable({
 
   async function handleSendLowBalanceAlert(userId: string) {
     setAlertingFor(userId);
+    setAlertResult(null);
     try {
-      await sendLowBalanceAlertAction(userId);
+      const result = await sendLowBalanceAlertAction(userId);
+      setAlertResult({ id: userId, ok: result.sent });
       router.refresh();
+    } catch {
+      setAlertResult({ id: userId, ok: false });
     } finally {
       setAlertingFor(null);
+      setTimeout(() => setAlertResult(null), 4000);
     }
   }
 
@@ -197,9 +266,14 @@ export function UsersTable({
               <X className="size-3.5" /> Clear
             </button>
           </div>
-          <Button variant="dangerSolid" className="gap-1.5 py-1.5" onClick={() => setDeleteTarget("bulk")}>
-            <Trash2 className="size-3.5" strokeWidth={2} /> Delete
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" className="gap-1.5 py-1.5" onClick={() => setBroadcastTargetIds(Array.from(selected))}>
+              <Megaphone className="size-3.5" strokeWidth={2} /> Broadcast message
+            </Button>
+            <Button variant="dangerSolid" className="gap-1.5 py-1.5" onClick={() => setDeleteTarget("bulk")}>
+              <Trash2 className="size-3.5" strokeWidth={2} /> Delete
+            </Button>
+          </div>
         </div>
       )}
 
@@ -219,12 +293,18 @@ export function UsersTable({
             </button>
           ))}
         </div>
-        <a href={`/admin/users/export?${searchParams.toString()}`}>
-          <Button variant="secondary" className="gap-1.5">
-            <Download className="size-4" strokeWidth={2} />
-            Export CSV
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" className="gap-1.5" onClick={() => setBroadcastTargetIds([])} disabled={total === 0}>
+            <Megaphone className="size-4" strokeWidth={2} />
+            Broadcast to filtered
           </Button>
-        </a>
+          <a href={`/admin/users/export?${searchParams.toString()}`}>
+            <Button variant="secondary" className="gap-1.5">
+              <Download className="size-4" strokeWidth={2} />
+              Export CSV
+            </Button>
+          </a>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -297,6 +377,78 @@ export function UsersTable({
             </button>
           </form>
         )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = new FormData(e.currentTarget);
+            navigate({
+              coinMin: data.get("coinMin") ? String(data.get("coinMin")) : null,
+              coinMax: data.get("coinMax") ? String(data.get("coinMax")) : null,
+            });
+          }}
+          className="flex items-end gap-2"
+        >
+          <TextField name="coinMin" type="number" label="Credits min" defaultValue={coinMin} placeholder="0" />
+          <TextField name="coinMax" type="number" label="Credits max" defaultValue={coinMax} placeholder="Any" />
+          <button type="submit" className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover">
+            Apply
+          </button>
+        </form>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Plan</span>
+          <select
+            value={planId}
+            onChange={(e) => navigate({ planId: e.target.value || null })}
+            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
+          >
+            <option value="">All</option>
+            <option value="none">No plan</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Channel</span>
+          <div className="flex gap-3 rounded-lg border border-border bg-surface-warm px-3 py-2.5">
+            <label className="flex items-center gap-1.5 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={hasWhatsapp}
+                onChange={(e) => navigate({ hasWhatsapp: e.target.checked })}
+                className="size-4 rounded border-border text-accent"
+              />
+              WhatsApp
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={hasTelegram}
+                onChange={(e) => navigate({ hasTelegram: e.target.checked })}
+                className="size-4 rounded border-border text-accent"
+              />
+              Telegram
+            </label>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">24h window</span>
+          <select
+            value={windowFilter}
+            onChange={(e) => navigate({ windowFilter: e.target.value || null })}
+            className="rounded-lg border border-border bg-surface-warm px-3 py-2.5 text-sm text-ink"
+          >
+            <option value="">Any</option>
+            <option value="within">Within 24h</option>
+            <option value="outside">Outside 24h</option>
+          </select>
+        </div>
       </div>
 
       <TableCard>
@@ -362,7 +514,12 @@ export function UsersTable({
             </Td>
             <Td align="right">{user.effective_plan_expires_at ? formatDate(user.effective_plan_expires_at) : "—"}</Td>
             <Td align="right">
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-2">
+                {alertResult?.id === user.detail_user_id && (
+                  <span className={cn("text-xs font-medium", alertResult.ok ? "text-success-text" : "text-danger-text")}>
+                    {alertResult.ok ? "Alert sent" : "Failed to send"}
+                  </span>
+                )}
                 <RowActionsMenu
                   actions={[
                     {
@@ -389,6 +546,11 @@ export function UsersTable({
                       icon: <Bell className="size-3.5" strokeWidth={2} />,
                       onClick: () => handleSendLowBalanceAlert(user.detail_user_id!),
                       disabled: !user.detail_user_id || !user.wa_id || alertingFor === user.detail_user_id,
+                    },
+                    {
+                      label: "Broadcast history",
+                      icon: <History className="size-3.5" strokeWidth={2} />,
+                      onClick: () => setHistoryTarget(user),
                     },
                     {
                       label: user.effective_blocked_at ? "Unblock" : "Block",
@@ -476,6 +638,16 @@ export function UsersTable({
       />
 
       <EditUserModal target={editTarget} onClose={() => setEditTarget(null)} />
+
+      <BroadcastToUsersModal
+        open={broadcastTargetIds !== null}
+        source="accounts"
+        selectedIds={broadcastTargetIds ?? []}
+        filters={currentFilters}
+        onClose={() => setBroadcastTargetIds(null)}
+      />
+
+      <BroadcastHistoryModal userIds={historyTarget?.userIds ?? null} onClose={() => setHistoryTarget(null)} />
 
       <ConfirmDialog
         open={deleteTarget !== null}

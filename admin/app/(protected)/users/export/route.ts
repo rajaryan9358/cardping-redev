@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "../../../../lib/auth";
-import { adminUsersRepo, UserStatusFilter } from "../../../../lib/repositories/adminUsers.repo";
+import { adminUsersRepo, UserStatusFilter, WindowFilter } from "../../../../lib/repositories/adminUsers.repo";
 import { rowsToCsv } from "../../../../lib/csv";
 
 const VALID_STATUSES: UserStatusFilter[] = ["active", "blocked", "trial", "subscription", "expired"];
@@ -17,9 +17,28 @@ export async function GET(req: NextRequest) {
   const status = VALID_STATUSES.includes(statusParam as UserStatusFilter) ? (statusParam as UserStatusFilter) : undefined;
   const expiresBefore = params.get("expiresBefore") || undefined;
   const expiresAfter = params.get("expiresAfter") || undefined;
+  const coinMin = params.get("coinMin") ? Number(params.get("coinMin")) : undefined;
+  const coinMax = params.get("coinMax") ? Number(params.get("coinMax")) : undefined;
+  const planId = params.get("planId") || undefined;
+  const hasWhatsapp = params.get("hasWhatsapp") === "1";
+  const hasTelegram = params.get("hasTelegram") === "1";
+  const windowParam = params.get("window");
+  const windowFilter = (windowParam === "within" || windowParam === "outside" ? windowParam : undefined) as WindowFilter | undefined;
   const sort = params.get("sort") || undefined;
 
-  const rows = await adminUsersRepo.listUsersForExport({ search, status, expiresBefore, expiresAfter, sort });
+  const rows = await adminUsersRepo.listUsersForExport({
+    search,
+    status,
+    expiresBefore,
+    expiresAfter,
+    coinMin,
+    coinMax,
+    planId,
+    hasWhatsapp,
+    hasTelegram,
+    windowFilter,
+    sort,
+  });
   const csv = rowsToCsv(
     rows.map((r) => ({
       id: r.id,

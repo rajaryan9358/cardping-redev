@@ -65,3 +65,14 @@ export function substituteTelegramTokens(template: string, recipient: RecipientF
     return escapeTelegramHtml(resolveField(name as BroadcastField, recipient, planNamesById));
   });
 }
+
+/** Builds the natural, free-text version of a WhatsApp template's body —
+ * substitutes already-resolved `variables[]` into the template's numeric
+ * `{{n}}` slots (1-indexed, matching Meta's convention). Used for a
+ * recipient inside their 24h customer-service window, where a plain
+ * message is both allowed and more natural than the formal template
+ * mechanism (see broadcastJob.ts). Plain string substitution — WhatsApp's
+ * free-text send has no HTML/markup escaping requirement, unlike Telegram. */
+export function fillTemplateBody(bodyText: string, variables: string[]): string {
+  return bodyText.replace(/\{\{(\d+)\}\}/g, (match, n: string) => variables[Number(n) - 1] ?? match);
+}

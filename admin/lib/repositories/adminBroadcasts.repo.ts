@@ -6,6 +6,16 @@ import { AudienceFilter } from "../audienceFilter";
 
 export type { AudienceFilter } from "../audienceFilter";
 
+// A campaign whose recipients were hand-picked (checkbox selection or "all
+// rows matching the current Users/Contacts filters") rather than chosen via
+// the Audience dropdown — see broadcastToUsersAction. Deliberately NOT part
+// of AudienceFilter/AUDIENCE_FILTER_LABELS, which BroadcastComposer's
+// Audience <select> renders every key of — this value must never appear
+// there, only ever get written to/read from the audience_filter column
+// (plain text, no DB enum) by the manual-selection path.
+export const MANUAL_SELECTION_AUDIENCE_FILTER = "manual_selection" as const;
+export type StoredAudienceFilter = AudienceFilter | typeof MANUAL_SELECTION_AUDIENCE_FILTER;
+
 export type BroadcastChannel = "whatsapp" | "telegram";
 export type BroadcastStatus = "draft" | "sending" | "completed" | "failed";
 export type RecipientStatus = "pending" | "sent" | "failed";
@@ -86,7 +96,7 @@ async function createCampaign(input: {
   templateName: string | null;
   body: string;
   audienceDescription: string;
-  audienceFilter: AudienceFilter;
+  audienceFilter: StoredAudienceFilter;
   createdBy: string;
 }): Promise<string> {
   const { data, error } = await supabase
@@ -124,6 +134,19 @@ async function insertRecipients(campaignId: string, userIds: string[]): Promise<
   if (error) throw error;
 }
 
+/** The distinct set of user_ids an earlier campaign actually targeted —
+ * used only for resending a manual-selection campaign (see
+ * resendCampaignAction), where "re-run the filter" makes no sense (there
+ * is no filter) and "everyone currently matching" would silently drift the
+ * audience over time. Every original recipient regardless of status
+ * (sent/failed/pending) — a resend is "message these same people again,"
+ * not "retry only the ones that failed." */
+async function getCampaignRecipientUserIds(campaignId: string): Promise<string[]> {
+  const { data, error } = await supabase.from("broadcast_recipients").select("user_id").eq("campaign_id", campaignId);
+  if (error) throw error;
+  return Array.from(new Set((data ?? []).map((r) => r.user_id)));
+}
+
 async function setCampaignStatus(campaignId: string, status: BroadcastStatus): Promise<void> {
   await supabase.from("broadcast_campaigns").update({ status }).eq("id", campaignId);
 }
@@ -148,6 +171,10 @@ export interface PendingRecipient {
   effective_coin_balance: number;
   effective_plan_id: string | null;
   effective_plan_expires_at: string | null;
+  // Whether this WhatsApp recipient is inside the 24h customer-service
+  // window — see broadcastJob.ts, which sends a natural free-text message
+  // instead of the formal template when true.
+  last_login: string | null;
 }
 
 /** `user_with_event` is a VIEW, not a table — broadcast_recipients.user_id's
@@ -170,7 +197,7 @@ async function getPendingRecipients(campaignId: string): Promise<PendingRecipien
   const userIds = recipients.map((r) => r.user_id);
   const { data: users, error: usersErr } = await supabase
     .from("user_with_event")
-    .select("user_id, full_name, wa_id, telegram_chat_id, effective_coin_balance, effective_plan_id, effective_plan_expires_at")
+    .select("user_id, full_name, wa_id, telegram_chat_id, effective_coin_balance, effective_plan_id, effective_plan_expires_at, last_login")
     .in("user_id", userIds);
   if (usersErr) throw usersErr;
 
@@ -186,8 +213,62 @@ async function getPendingRecipients(campaignId: string): Promise<PendingRecipien
       effective_coin_balance: u?.effective_coin_balance ?? 0,
       effective_plan_id: u?.effective_plan_id ?? null,
       effective_plan_expires_at: u?.effective_plan_expires_at ?? null,
+      last_login: u?.last_login ?? null,
     };
   });
+}
+
+export interface BroadcastHistoryEntry {
+  campaignId: string;
+  channel: BroadcastChannel;
+  templateName: string | null;
+  body: string;
+  status: RecipientStatus;
+  error: string | null;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+interface RawHistoryCampaign {
+  id: string;
+  channel: BroadcastChannel;
+  template_name: string | null;
+  body: string;
+  created_at: string;
+}
+
+/** Every broadcast a person was a recipient of, across every linked
+ * channel identity (an account row's `userIds` includes both if
+ * dual-linked) — for the Users/Contacts tables' "Broadcast history" row
+ * action. `broadcast_recipients.campaign_id` has a real FK to
+ * `broadcast_campaigns`, so this embeds it directly (unlike
+ * getPendingRecipients' user_with_event join, which can't). */
+async function getBroadcastHistoryForUsers(userIds: string[]): Promise<BroadcastHistoryEntry[]> {
+  if (userIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("broadcast_recipients")
+    .select("status, sent_at, error, campaign:broadcast_campaigns(id, channel, template_name, body, created_at)")
+    .in("user_id", userIds);
+  if (error) throw error;
+
+  const rows = (data ?? [])
+    .map((r) => {
+      const campaign = (Array.isArray(r.campaign) ? r.campaign[0] : r.campaign) as RawHistoryCampaign | null;
+      if (!campaign) return null;
+      return {
+        campaignId: campaign.id,
+        channel: campaign.channel,
+        templateName: campaign.template_name,
+        body: campaign.body,
+        status: r.status as RecipientStatus,
+        error: r.error,
+        sentAt: r.sent_at,
+        createdAt: campaign.created_at,
+      };
+    })
+    .filter((r): r is BroadcastHistoryEntry => r !== null);
+
+  return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 /** id -> name, for resolving the Subscription field. No `is_active`
@@ -243,10 +324,12 @@ export const adminBroadcastsRepo = {
   createCampaign,
   getCampaignById,
   insertRecipients,
+  getCampaignRecipientUserIds,
   setCampaignStatus,
   setRecipientResult,
   getPendingRecipients,
   getPlanNamesById,
+  getBroadcastHistoryForUsers,
   listCampaigns,
   getRecipientCounts,
 };

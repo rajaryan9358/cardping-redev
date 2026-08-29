@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminUsersRepo, UserStatusFilter } from "../../../lib/repositories/adminUsers.repo";
+import { adminUsersRepo, UserStatusFilter, WindowFilter } from "../../../lib/repositories/adminUsers.repo";
 import { adminSubscriptionsRepo } from "../../../lib/repositories/adminSubscriptions.repo";
 import { env } from "../../../lib/env";
 import { cn } from "@/lib/cn";
@@ -28,6 +28,12 @@ export default async function UsersPage({
     status?: string;
     expiresBefore?: string;
     expiresAfter?: string;
+    coinMin?: string;
+    coinMax?: string;
+    planId?: string;
+    hasWhatsapp?: string;
+    hasTelegram?: string;
+    window?: string;
     sort?: string;
   };
 }) {
@@ -36,9 +42,12 @@ export default async function UsersPage({
   const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.pageSize)) ? Number(searchParams.pageSize) : DEFAULT_PAGE_SIZE;
   const search = searchParams.search ?? "";
   const sort = searchParams.sort || undefined;
+  const windowFilter = (searchParams.window === "within" || searchParams.window === "outside" ? searchParams.window : undefined) as
+    | WindowFilter
+    | undefined;
 
   const tabBar = (
-    <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
+    <div className="flex w-fit flex-wrap gap-1 self-start rounded-xl border border-border bg-surface-warm p-1">
       {VIEW_TABS.map((tab) => (
         <Link
           key={tab.value}
@@ -56,7 +65,7 @@ export default async function UsersPage({
 
   if (view === "whatsapp_contacts" || view === "telegram_contacts") {
     const channel = view === "whatsapp_contacts" ? "whatsapp" : "telegram";
-    const { rows, total } = await adminUsersRepo.listChannelContacts(channel, { search, sort, page, pageSize });
+    const { rows, total } = await adminUsersRepo.listChannelContacts(channel, { search, sort, windowFilter, page, pageSize });
 
     return (
       <div className="flex flex-col gap-6">
@@ -65,7 +74,16 @@ export default async function UsersPage({
           <p className="mt-1 text-sm text-muted">{total} total</p>
         </div>
         {tabBar}
-        <ContactsTable channel={channel} rows={rows} total={total} page={page} pageSize={pageSize} search={search} sort={sort ?? ""} />
+        <ContactsTable
+          channel={channel}
+          rows={rows}
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          search={search}
+          sort={sort ?? ""}
+          windowFilter={windowFilter ?? ""}
+        />
       </div>
     );
   }
@@ -73,8 +91,27 @@ export default async function UsersPage({
   const status = (searchParams.status || undefined) as UserStatusFilter | undefined;
   const expiresBefore = searchParams.expiresBefore || undefined;
   const expiresAfter = searchParams.expiresAfter || undefined;
+  const coinMin = searchParams.coinMin ? Number(searchParams.coinMin) : undefined;
+  const coinMax = searchParams.coinMax ? Number(searchParams.coinMax) : undefined;
+  const planId = searchParams.planId || undefined;
+  const hasWhatsapp = searchParams.hasWhatsapp === "1";
+  const hasTelegram = searchParams.hasTelegram === "1";
   const [{ rows, total }, plans] = await Promise.all([
-    adminUsersRepo.listUsers({ search, status, expiresBefore, expiresAfter, sort, page, pageSize }),
+    adminUsersRepo.listUsers({
+      search,
+      status,
+      expiresBefore,
+      expiresAfter,
+      coinMin,
+      coinMax,
+      planId,
+      hasWhatsapp,
+      hasTelegram,
+      windowFilter,
+      sort,
+      page,
+      pageSize,
+    }),
     adminSubscriptionsRepo.listPlans(),
   ]);
 
@@ -94,6 +131,12 @@ export default async function UsersPage({
         status={status ?? ""}
         expiresBefore={expiresBefore ?? ""}
         expiresAfter={expiresAfter ?? ""}
+        coinMin={searchParams.coinMin ?? ""}
+        coinMax={searchParams.coinMax ?? ""}
+        planId={planId ?? ""}
+        hasWhatsapp={hasWhatsapp}
+        hasTelegram={hasTelegram}
+        windowFilter={windowFilter ?? ""}
         sort={sort ?? ""}
         plans={plans}
         lowBalanceThreshold={env.LOW_BALANCE_THRESHOLD}

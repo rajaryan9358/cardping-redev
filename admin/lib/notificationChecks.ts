@@ -16,7 +16,8 @@ export async function runNotificationChecks(): Promise<void> {
     if (!user.wa_id) continue;
     await sendNotification({
       userId: user.id,
-      waId: user.wa_id,
+      channel: "whatsapp",
+      identifier: user.wa_id,
       type: "renewal_reminder",
       triggeredBy: "auto",
       variables: [user.full_name || "there", String(daysUntil(user.plan_expires_at))],
@@ -28,7 +29,8 @@ export async function runNotificationChecks(): Promise<void> {
     if (!user.wa_id) continue;
     await sendNotification({
       userId: user.id,
-      waId: user.wa_id,
+      channel: "whatsapp",
+      identifier: user.wa_id,
       type: "low_balance_alert",
       triggeredBy: "auto",
       variables: [user.full_name || "there", String(user.coin_balance)],

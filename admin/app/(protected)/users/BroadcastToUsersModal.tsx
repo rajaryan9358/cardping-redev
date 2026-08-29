@@ -3,68 +3,62 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
+import { TextField } from "../../../components/ui/TextField";
 import { TemplateBodyPreview, SlotRow } from "../../../components/broadcasts/TemplateSlots";
-import { SlotValue } from "../../../lib/broadcastFields";
+import { BROADCAST_FIELD_OPTIONS, BroadcastField, SlotValue } from "../../../lib/broadcastFields";
 import { WhatsAppTemplate } from "../../../lib/whatsappTemplates";
-import { formatDate } from "../../../lib/format";
+import { ListUsersFilterParams } from "../../../lib/repositories/adminUsers.repo";
+import { BroadcastChannel } from "../../../lib/repositories/adminBroadcasts.repo";
 import { listWhatsAppTemplatesAction } from "../actions";
-import { sendMessageAction } from "./actions";
+import { broadcastToUsersAction, BroadcastSource } from "./broadcastActions";
 
-const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
-
-export interface SendMessageTarget {
-  user_id: string;
-  full_name: string | null;
-  wa_id: string | null;
-  telegram_chat_id: string | null;
-  last_login: string | null;
-  effective_plan_expires_at: string | null;
-}
-
-function defaultMessageFor(user: SendMessageTarget): string {
-  if (!user.effective_plan_expires_at) return "";
-  const name = user.full_name || "there";
-  return `Hi ${name}, your plan expires on ${formatDate(user.effective_plan_expires_at)}. Renew soon to keep your benefits.`;
-}
-
-export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | null; onClose: () => void }) {
-  const availableChannels = user
-    ? ([user.wa_id ? "whatsapp" : null, user.telegram_chat_id ? "telegram" : null].filter(Boolean) as (
-        | "whatsapp"
-        | "telegram"
-      )[])
-    : [];
-  const [channel, setChannel] = useState<"whatsapp" | "telegram">("whatsapp");
-  const [body, setBody] = useState("");
+export function BroadcastToUsersModal({
+  open,
+  source,
+  selectedIds,
+  filters,
+  onClose,
+}: {
+  open: boolean;
+  source: BroadcastSource;
+  selectedIds: string[];
+  filters: ListUsersFilterParams;
+  onClose: () => void;
+}) {
+  // Accounts can be linked on either/both channels, so the admin picks
+  // which one to send on; a Contacts source already implies its channel.
+  const fixedChannel: BroadcastChannel | null = source === "whatsapp_contacts" ? "whatsapp" : source === "telegram_contacts" ? "telegram" : null;
+  const [channel, setChannel] = useState<BroadcastChannel>(fixedChannel ?? "whatsapp");
   const [templates, setTemplates] = useState<WhatsAppTemplate[] | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
+  const [manualTemplateName, setManualTemplateName] = useState("");
+  const [manualLanguage, setManualLanguage] = useState("en");
   const [slots, setSlots] = useState<SlotValue[]>([]);
-  const [manualTemplate, setManualTemplate] = useState("");
+  const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const within24h = user?.last_login ? Date.now() - new Date(user.last_login).getTime() < WITHIN_24H_MS : false;
-  const needsTemplate = channel === "whatsapp" && !within24h;
-  const usingDropdown = (templates?.length ?? 0) > 0;
-
   useEffect(() => {
-    if (!user) return;
-    setChannel(availableChannels[0] ?? "whatsapp");
-    setBody(defaultMessageFor(user));
-    setError(null);
-    setTemplates(null);
+    if (!open) return;
+    setChannel(fixedChannel ?? "whatsapp");
     setSelectedTemplate(null);
     setSlots([]);
+    setMessage("");
+    setError(null);
+    setTemplates(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.user_id]);
+  }, [open]);
 
   useEffect(() => {
-    if (needsTemplate && templates === null) {
+    if (open && channel === "whatsapp" && templates === null) {
       listWhatsAppTemplatesAction().then(setTemplates);
     }
-  }, [needsTemplate, templates]);
+  }, [open, channel, templates]);
 
-  if (!user) return null;
+  const usingDropdown = (templates?.length ?? 0) > 0;
+  const templateName = usingDropdown ? selectedTemplate?.name ?? "" : manualTemplateName;
+  const languageCode = usingDropdown ? selectedTemplate?.language ?? "en" : manualLanguage;
+  const targetLabel = selectedIds.length > 0 ? `${selectedIds.length} selected` : "everyone matching your current filters";
 
   function selectTemplate(t: WhatsAppTemplate | null) {
     setSelectedTemplate(t);
@@ -75,17 +69,29 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
     setSlots((prev) => prev.map((s, i) => (i === index ? next : s)));
   }
 
+  function insertField(field: BroadcastField) {
+    setMessage((prev) => `${prev}{{${field}}}`);
+  }
+
   async function handleSend() {
     setSaving(true);
     setError(null);
     try {
-      await sendMessageAction(user!.user_id, {
+      const result = await broadcastToUsersAction({
+        source,
+        selectedIds,
+        filters,
         channel,
-        body: needsTemplate ? undefined : body,
-        templateName: needsTemplate ? (usingDropdown ? selectedTemplate?.name : manualTemplate) : undefined,
-        languageCode: selectedTemplate?.language,
-        slots: needsTemplate && usingDropdown ? slots : undefined,
+        templateName: channel === "whatsapp" ? templateName || null : null,
+        languageCode,
+        slots: channel === "whatsapp" ? slots : undefined,
+        bodyText: channel === "whatsapp" ? selectedTemplate?.bodyText ?? null : undefined,
+        message: channel === "telegram" ? message : undefined,
       });
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -96,24 +102,26 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
 
   return (
     <Modal
-      open={user !== null}
+      open={open}
       onClose={onClose}
-      title={`Message ${user.full_name || "this user"}`}
+      title="Broadcast message"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={handleSend} loading={saving}>
-            Send
+            Send to {selectedIds.length > 0 ? selectedIds.length : "filtered"}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {availableChannels.length > 1 && (
+        <p className="text-xs text-muted">Sending to <span className="font-medium text-ink">{targetLabel}</span>.</p>
+
+        {fixedChannel === null && (
           <div className="flex gap-2">
-            {availableChannels.map((c) => (
+            {(["whatsapp", "telegram"] as const).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -128,10 +136,9 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
           </div>
         )}
 
-        {needsTemplate ? (
-          <div className="flex flex-col gap-3">
+        {channel === "whatsapp" ? (
+          <>
             <div className="flex flex-col gap-2">
-              <p className="text-xs text-muted">Outside the 24h window — pick a template.</p>
               <label className="text-xs font-semibold tracking-wide text-muted-2">Template</label>
               {templates === null ? (
                 <p className="text-sm text-muted">Loading templates…</p>
@@ -153,13 +160,9 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
                 </select>
               ) : (
                 <>
-                  <p className="text-xs text-muted">No templates found — enter the name manually.</p>
-                  <input
-                    value={manualTemplate}
-                    onChange={(e) => setManualTemplate(e.target.value)}
-                    placeholder="e.g. general_follow_up"
-                    className="rounded-lg border border-border bg-surface-warm px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
-                  />
+                  <p className="text-xs text-muted">No templates found — enter one manually.</p>
+                  <TextField label="Template name" value={manualTemplateName} onChange={(e) => setManualTemplateName(e.target.value)} placeholder="e.g. monthly_promo" />
+                  <TextField label="Language code" value={manualLanguage} onChange={(e) => setManualLanguage(e.target.value)} />
                 </>
               )}
             </div>
@@ -179,16 +182,32 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
                 )}
               </div>
             )}
-          </div>
+          </>
         ) : (
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold tracking-wide text-muted-2">Message</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold tracking-wide text-muted-2">Message</label>
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) insertField(e.target.value as BroadcastField);
+                }}
+                className="rounded-lg border border-border bg-surface-warm px-2.5 py-1.5 text-xs text-ink"
+              >
+                <option value="">Insert field…</option>
+                {BROADCAST_FIELD_OPTIONS.filter((opt) => !opt.whatsappOnly).map((opt) => (
+                  <option key={opt.field} value={opt.field}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
               rows={4}
-              placeholder="Write a message…"
               className="w-full rounded-lg border border-border bg-surface-warm px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+              placeholder="Write a message…"
             />
           </div>
         )}
