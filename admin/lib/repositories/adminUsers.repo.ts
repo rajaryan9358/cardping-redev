@@ -1,6 +1,7 @@
 import "server-only";
 import { supabase } from "../supabase";
 import { parseSort } from "../sort";
+import { Channel, CHANNEL_ID_COLUMN } from "../channels";
 
 /** The detail page's row shape — account-aware, unlike the old
  * user_with_event-keyed version this replaced. `id` is whatever the route
@@ -251,6 +252,105 @@ async function listUsers(params: ListUsersParams): Promise<Paginated<AdminUserLi
 
 async function listUsersForExport(params: ListUsersFilterParams): Promise<AdminUserListRow[]> {
   return buildFilteredUserRows(params);
+}
+
+/** Every `users.id` that has ANY `channel_links` row, regardless of
+ * `unlinked_at` — a soft-disconnected channel still "belongs" to its
+ * account and must not reappear as a bare contact. Shared by the
+ * WhatsApp/Telegram Contacts tabs below and the broadcasts repo's
+ * "contacted, never signed up" audience filter, so the two can't drift
+ * out of sync on what counts as "never signed up". */
+export async function getLinkedUsersIdSet(): Promise<Set<string>> {
+  const { data, error } = await supabase.from("channel_links").select("users_id");
+  if (error) throw error;
+  return new Set((data ?? []).map((l) => l.users_id));
+}
+
+export interface ChannelContactRow {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  identifier: string;
+  coin_balance: number;
+  created_at: string;
+  last_login: string | null;
+}
+
+interface RawContactUser {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  wa_id: string | null;
+  telegram_id: string | null;
+  telegram_chat_id: string | null;
+  coin_balance: number;
+  created_at: string;
+  last_login: string | null;
+}
+
+export interface ListChannelContactsParams {
+  search?: string;
+  sort?: string;
+  page: number;
+  pageSize: number;
+}
+
+const CONTACT_SORTABLE_FIELDS: Record<string, string> = {
+  created_at: "created_at",
+  last_login: "last_login",
+};
+
+/** Bot contacts for one channel who've never completed signup — a
+ * `users` row with the channel's id column set and no `channel_links`
+ * row at all (see getLinkedUsersIdSet). Deliberately a separate row shape
+ * from AdminUserListRow: there's no account, no effective_* precedence,
+ * no multi-channel union — just the bare channel identity. A row with
+ * both wa_id and telegram_id set legitimately appears in both channels'
+ * lists, since it did contact via both. */
+async function buildChannelContactRows(channel: Channel, { search, sort }: { search?: string; sort?: string }): Promise<ChannelContactRow[]> {
+  const idColumn = CHANNEL_ID_COLUMN[channel];
+  const [linkedIds, { data: users, error }] = await Promise.all([
+    getLinkedUsersIdSet(),
+    supabase
+      .from("users")
+      .select("id, full_name, email, wa_id, telegram_id, telegram_chat_id, coin_balance, created_at, last_login")
+      .not(idColumn, "is", null),
+  ]);
+  if (error) throw error;
+
+  const term = search?.trim().toLowerCase();
+  const rows: ChannelContactRow[] = ((users ?? []) as RawContactUser[])
+    .filter((u) => !linkedIds.has(u.id))
+    .map((u) => ({
+      id: u.id,
+      full_name: u.full_name,
+      email: u.email,
+      identifier: (channel === "whatsapp" ? u.wa_id : u.telegram_chat_id || u.telegram_id) ?? "",
+      coin_balance: u.coin_balance,
+      created_at: u.created_at,
+      last_login: u.last_login,
+    }))
+    .filter((r) => !term || [r.full_name, r.email, r.identifier].some((f) => f?.toLowerCase().includes(term)));
+
+  const parsedSort = parseSort(sort);
+  const sortField = parsedSort && CONTACT_SORTABLE_FIELDS[parsedSort.field] ? parsedSort.field : "created_at";
+  const ascending = parsedSort?.ascending ?? false;
+  rows.sort((a, b) => {
+    const av = sortField === "last_login" ? a.last_login : a.created_at;
+    const bv = sortField === "last_login" ? b.last_login : b.created_at;
+    if (av === null) return bv === null ? 0 : 1;
+    if (bv === null) return -1;
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return ascending ? cmp : -cmp;
+  });
+
+  return rows;
+}
+
+async function listChannelContacts(channel: Channel, params: ListChannelContactsParams): Promise<Paginated<ChannelContactRow>> {
+  const allRows = await buildChannelContactRows(channel, params);
+  const from = (params.page - 1) * params.pageSize;
+  return { rows: allRows.slice(from, from + params.pageSize), total: allRows.length };
 }
 
 /** `id` is whatever the route was reached with — tries it as an accountId
@@ -604,6 +704,7 @@ async function adjustAccountCoins(accountId: string, delta: number, reason: stri
 export const adminUsersRepo = {
   listUsers,
   listUsersForExport,
+  listChannelContacts,
   getUserDetail,
   getUserEvents,
   getUserCards,

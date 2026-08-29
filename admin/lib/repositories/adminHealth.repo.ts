@@ -1,12 +1,8 @@
 import "server-only";
 import { supabase } from "../supabase";
 import { env } from "../env";
+import { CHANNELS, CHANNEL_ID_COLUMN } from "../channels";
 
-// Not imported from server/'s domain types — admin/ never imports from
-// server/, see the plan's isolation note (a compromised internet-facing
-// server/ shouldn't be able to reach into admin/'s process either way, and
-// keeping the two apps' dependency graphs disjoint is what guarantees that).
-const CHANNELS = ["whatsapp", "telegram"] as const;
 // coin_bonus/refund dropped per product decision — rare/manual enough
 // that they're not worth a permanent tile. subscription_payment added —
 // it's a real transaction_type (see schema.sql's "Manual subscription
@@ -16,11 +12,6 @@ const CHANNELS = ["whatsapp", "telegram"] as const;
 // tile no longer shows the raw "-1 credits" — every scan is the same
 // -1, so the number added no information, just noise (see page.tsx).
 const TRANSACTION_TYPES = ["card_scan", "subscription_payment", "coin_purchase", "admin_adjustment"] as const;
-
-const CHANNEL_ID_COLUMN: Record<(typeof CHANNELS)[number], "wa_id" | "telegram_id"> = {
-  whatsapp: "wa_id",
-  telegram: "telegram_id",
-};
 
 /** "Last seen" = last time this channel identity sent the bot ANY inbound
  * message (users.last_login, touched by usersRepo.findOrCreate on every

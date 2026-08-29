@@ -1,12 +1,25 @@
 import "server-only";
 import { adminBroadcastsRepo, AdminCampaignRow } from "./repositories/adminBroadcasts.repo";
 import { sendTelegramBroadcastMessage, sendWhatsAppTemplate } from "./broadcastSend";
+import { resolveField, sanitizeForWhatsApp, substituteTelegramTokens } from "./broadcastFieldResolver";
+import { SlotValue } from "./broadcastFields";
 
 const SEND_DELAY_MS = 300;
 
 interface WhatsAppBody {
   languageCode: string;
-  variables: string[];
+  slots: SlotValue[];
+}
+
+// A campaign created before per-recipient variables shipped has body
+// shape {languageCode, variables: string[]} — every slot was a literal,
+// campaign-wide string. Resending one of those must keep working, so a
+// legacy `variables` array is treated as all-literal slots rather than
+// rejected outright.
+function normalizeWhatsAppBody(parsed: { languageCode: string; slots?: SlotValue[]; variables?: string[] }): WhatsAppBody {
+  if (parsed.slots) return { languageCode: parsed.languageCode, slots: parsed.slots };
+  const variables = parsed.variables ?? [];
+  return { languageCode: parsed.languageCode, slots: variables.map((value) => ({ type: "literal", value })) };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -34,25 +47,33 @@ export async function runBroadcastCampaign(
   let whatsAppBody: WhatsAppBody | null = null;
   if (channel === "whatsapp") {
     try {
-      whatsAppBody = JSON.parse(body) as WhatsAppBody;
+      whatsAppBody = normalizeWhatsAppBody(JSON.parse(body));
     } catch {
       await adminBroadcastsRepo.setCampaignStatus(campaignId, "failed");
       return;
     }
   }
 
+  // Campaign-wide (not per-recipient) — cheap enough to fetch once
+  // regardless of whether the template even uses the Subscription field.
+  const planNamesById = await adminBroadcastsRepo.getPlanNamesById();
+
   let sentCount = 0;
   for (const recipient of recipients) {
     try {
       if (channel === "whatsapp") {
-        const to = recipient.user?.wa_id;
+        const to = recipient.wa_id;
         if (!to) throw new Error("User has no wa_id");
         if (!templateName || !whatsAppBody) throw new Error("Missing template");
-        await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, whatsAppBody.variables);
+        const variables = whatsAppBody.slots.map((slot) =>
+          slot.type === "literal" ? sanitizeForWhatsApp(slot.value) : resolveField(slot.field, recipient, planNamesById),
+        );
+        await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, variables);
       } else {
-        const chatId = recipient.user?.telegram_chat_id;
+        const chatId = recipient.telegram_chat_id;
         if (!chatId) throw new Error("User has no telegram_chat_id");
-        await sendTelegramBroadcastMessage(chatId, body);
+        const resolvedMessage = substituteTelegramTokens(body, recipient, planNamesById);
+        await sendTelegramBroadcastMessage(chatId, resolvedMessage);
       }
       await adminBroadcastsRepo.setRecipientResult(recipient.id, "sent", null);
       sentCount += 1;

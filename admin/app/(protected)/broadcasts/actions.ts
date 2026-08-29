@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
 import { adminBroadcastsRepo, BroadcastChannel } from "../../../lib/repositories/adminBroadcasts.repo";
 import { AudienceFilter, AUDIENCE_FILTER_LABELS } from "../../../lib/audienceFilter";
+import { SlotValue } from "../../../lib/broadcastFields";
 import { writeAuditLog } from "../../../lib/auditLog";
 import { runBroadcastCampaign } from "../../../lib/broadcastJob";
 
@@ -71,10 +72,14 @@ export async function createAndSendBroadcastAction(
   if (channel === "whatsapp") {
     templateName = String(formData.get("templateName") ?? "").trim();
     const languageCode = String(formData.get("languageCode") ?? "en").trim() || "en";
-    const variablesRaw = String(formData.get("variables") ?? "").trim();
     if (!templateName) return { error: "Choose or enter the approved template name." };
-    const variables = variablesRaw ? variablesRaw.split("\n").map((v) => v.trim()).filter(Boolean) : [];
-    body = JSON.stringify({ languageCode, variables });
+    let slots: SlotValue[];
+    try {
+      slots = JSON.parse(String(formData.get("slots") ?? "[]"));
+    } catch {
+      return { error: "Invalid variable mapping." };
+    }
+    body = JSON.stringify({ languageCode, slots });
   } else {
     body = String(formData.get("message") ?? "").trim();
     if (!body) return { error: "Enter a message." };
