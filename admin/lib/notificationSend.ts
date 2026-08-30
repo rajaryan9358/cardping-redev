@@ -32,7 +32,12 @@ const TEMPLATE_NAME: Record<NotificationType, string> = {
 // channels stay in sync content-wise.
 const TELEGRAM_MESSAGE: Record<NotificationType, (variables: string[]) => string> = {
   renewal_reminder: ([name]) => `Hi ${name || "there"}, your plan is expiring soon — renew to keep your benefits.`,
-  low_balance_alert: ([name, balance]) => `Hi ${name || "there"}, you have ${balance ?? "a low number of"} credits left — top up to keep scanning.`,
+  // Kept word-for-word identical to the WhatsApp template text submitted
+  // for Meta approval — deliberately Utility-worded (a plain account-status
+  // fact, no "top up now" call-to-action), since that phrasing is what got
+  // Meta to classify it as Utility rather than Marketing.
+  low_balance_alert: ([name, balance]) =>
+    `Hi ${name || "there"}, your CardPing account currently has ${balance ?? "a low number of"} credits remaining. Manage your balance anytime from your dashboard.`,
 };
 
 /** The one place both the scheduler and the manual "Send reminder"/"Send

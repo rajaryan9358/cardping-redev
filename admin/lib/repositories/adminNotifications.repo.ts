@@ -1,7 +1,7 @@
 import "server-only";
 import { supabase } from "../supabase";
 import { env } from "../env";
-import { Paginated } from "./adminUsers.repo";
+import { Paginated, getLinkedUsersIdSet } from "./adminUsers.repo";
 
 export type NotificationType = "renewal_reminder" | "low_balance_alert";
 export type NotificationTriggeredBy = "manual" | "auto";
@@ -64,14 +64,23 @@ const LOW_BALANCE_DEDUPE_DAYS = 7;
 async function findLowBalanceCandidates(): Promise<LowBalanceCandidate[]> {
   const dedupeSince = new Date(Date.now() - LOW_BALANCE_DEDUPE_DAYS * 86400000);
 
-  const { data: candidates, error } = await supabase
-    .from("users")
-    .select("id, wa_id, full_name, coin_balance")
-    .lte("coin_balance", env.LOW_BALANCE_THRESHOLD)
-    .not("wa_id", "is", null)
-    .is("blocked_at", null);
+  const [linkedIds, { data: rawCandidates, error }] = await Promise.all([
+    getLinkedUsersIdSet(),
+    supabase
+      .from("users")
+      .select("id, wa_id, full_name, coin_balance")
+      .lte("coin_balance", env.LOW_BALANCE_THRESHOLD)
+      .not("wa_id", "is", null)
+      .is("blocked_at", null),
+  ]);
   if (error) throw error;
-  if (!candidates || candidates.length === 0) return [];
+  // A bot contact who's never completed signup has a low_coin_balance too
+  // (the legacy per-channel column starts near-empty), but nudging them to
+  // "top up" makes no sense before they even have an account to hold a
+  // balance on — this alert is for existing subscribers running low, not
+  // an acquisition message. Only users linked to a real account qualify.
+  const candidates = (rawCandidates ?? []).filter((c) => linkedIds.has(c.id));
+  if (candidates.length === 0) return [];
 
   const { data: recentLogs, error: logError } = await supabase
     .from("notification_log")
