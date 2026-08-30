@@ -57,6 +57,7 @@ export interface LowBalanceCandidate {
   wa_id: string | null;
   full_name: string | null;
   coin_balance: number;
+  last_login: string | null;
 }
 
 const LOW_BALANCE_DEDUPE_DAYS = 7;
@@ -68,7 +69,7 @@ async function findLowBalanceCandidates(): Promise<LowBalanceCandidate[]> {
     getLinkedUsersIdSet(),
     supabase
       .from("users")
-      .select("id, wa_id, full_name, coin_balance")
+      .select("id, wa_id, full_name, coin_balance, last_login")
       .lte("coin_balance", env.LOW_BALANCE_THRESHOLD)
       .not("wa_id", "is", null)
       .is("blocked_at", null),

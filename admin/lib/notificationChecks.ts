@@ -34,6 +34,7 @@ export async function runNotificationChecks(): Promise<void> {
       type: "low_balance_alert",
       triggeredBy: "auto",
       variables: [user.full_name || "there", String(user.coin_balance)],
+      lastLogin: user.last_login,
     });
   }
 }

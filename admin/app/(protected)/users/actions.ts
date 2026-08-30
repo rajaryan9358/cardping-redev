@@ -119,6 +119,7 @@ export async function sendLowBalanceAlertAction(
     triggeredBy: "manual",
     adminUserId: admin.id,
     variables: [user.full_name || "there", String(user.effective_coin_balance)],
+    lastLogin: user.last_login,
   });
 
   await writeAuditLog({

@@ -26,7 +26,7 @@ const envSchema = z.object({
   // WhatsApp templates. These are Utility-category templates, not
   // Marketing — see docs/ADMIN_APP.md.
   WHATSAPP_RENEWAL_TEMPLATE_NAME: z.string().default("subscription_renewal_reminder"),
-  WHATSAPP_LOW_BALANCE_TEMPLATE_NAME: z.string().default("low_coin_balance_alert"),
+  WHATSAPP_LOW_BALANCE_TEMPLATE_NAME: z.string().default("low_balance"),
   RENEWAL_REMINDER_DAYS_BEFORE_EXPIRY: z.coerce.number().int().positive().default(3),
   LOW_BALANCE_THRESHOLD: z.coerce.number().int().nonnegative().default(10),
   NOTIFICATION_CHECK_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),

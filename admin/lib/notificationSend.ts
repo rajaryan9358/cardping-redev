@@ -1,11 +1,13 @@
 import "server-only";
 import { env } from "./env";
-import { sendWhatsAppTemplate, sendTelegramBroadcastMessage } from "./broadcastSend";
+import { sendWhatsAppTemplate, sendWhatsAppText, sendTelegramBroadcastMessage } from "./broadcastSend";
 import {
   adminNotificationsRepo,
   NotificationTriggeredBy,
   NotificationType,
 } from "./repositories/adminNotifications.repo";
+
+const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
 
 interface SendNotificationInput {
   userId: string;
@@ -15,10 +17,15 @@ interface SendNotificationInput {
   type: NotificationType;
   triggeredBy: NotificationTriggeredBy;
   adminUserId?: string;
-  /** Variables for the WhatsApp template body, in template order — unused
-   * for Telegram, which sends a plain composed string instead (no
-   * approved-template requirement, no 24h window restriction). */
+  /** Variables for the WhatsApp template body, in template order — also
+   * fed into MESSAGE_BODY for Telegram, or for WhatsApp inside the 24h
+   * window (see below). */
   variables: string[];
+  /** WhatsApp only — omit/null if unknown. Meta only allows free text
+   * inside the 24h customer-service window; outside it (or when this
+   * isn't known), the approved template is required. Telegram has no such
+   * restriction and always sends the composed message regardless. */
+  lastLogin?: string | null;
 }
 
 const TEMPLATE_NAME: Record<NotificationType, string> = {
@@ -26,16 +33,18 @@ const TEMPLATE_NAME: Record<NotificationType, string> = {
   low_balance_alert: env.WHATSAPP_LOW_BALANCE_TEMPLATE_NAME,
 };
 
-// Telegram has no approved-template system — a low-balance alert there is
-// just a plain message built from the same [name, balance] variables the
-// WhatsApp template takes (see sendLowBalanceAlertAction), so the two
-// channels stay in sync content-wise.
-const TELEGRAM_MESSAGE: Record<NotificationType, (variables: string[]) => string> = {
+// The exact same content as the approved WhatsApp template, fully
+// substituted into plain text — used for Telegram always (no
+// approved-template system there), and for WhatsApp when the recipient is
+// inside their 24h window, where free text is allowed and reads more
+// naturally than the formal template mechanism. Must stay word-for-word
+// identical to what's registered with Meta, since it's the same message,
+// just delivered differently depending on the window.
+const MESSAGE_BODY: Record<NotificationType, (variables: string[]) => string> = {
   renewal_reminder: ([name]) => `Hi ${name || "there"}, your plan is expiring soon — renew to keep your benefits.`,
-  // Kept word-for-word identical to the WhatsApp template text submitted
-  // for Meta approval — deliberately Utility-worded (a plain account-status
-  // fact, no "top up now" call-to-action), since that phrasing is what got
-  // Meta to classify it as Utility rather than Marketing.
+  // Deliberately Utility-worded (a plain account-status fact, no "top up
+  // now" call-to-action) — that phrasing is what got Meta to classify the
+  // WhatsApp template as Utility rather than Marketing.
   low_balance_alert: ([name, balance]) =>
     `Hi ${name || "there"}, your CardPing account currently has ${balance ?? "a low number of"} credits remaining. Manage your balance anytime from your dashboard.`,
 };
@@ -50,9 +59,14 @@ const TELEGRAM_MESSAGE: Record<NotificationType, (variables: string[]) => string
 export async function sendNotification(input: SendNotificationInput): Promise<{ sent: boolean; error?: string }> {
   try {
     if (input.channel === "telegram") {
-      await sendTelegramBroadcastMessage(input.identifier, TELEGRAM_MESSAGE[input.type](input.variables));
+      await sendTelegramBroadcastMessage(input.identifier, MESSAGE_BODY[input.type](input.variables));
     } else {
-      await sendWhatsAppTemplate(input.identifier, TEMPLATE_NAME[input.type], "en", input.variables);
+      const within24h = !!input.lastLogin && Date.now() - new Date(input.lastLogin).getTime() < WITHIN_24H_MS;
+      if (within24h) {
+        await sendWhatsAppText(input.identifier, MESSAGE_BODY[input.type](input.variables));
+      } else {
+        await sendWhatsAppTemplate(input.identifier, TEMPLATE_NAME[input.type], "en", input.variables);
+      }
     }
     await adminNotificationsRepo.logNotification({
       userId: input.userId,
