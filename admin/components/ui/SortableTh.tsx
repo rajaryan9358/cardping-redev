@@ -10,18 +10,20 @@ export function SortableTh({
   currentSort,
   onSort,
   align,
+  className,
 }: {
   field: string;
   label: string;
   currentSort: string | undefined;
   onSort: (field: string) => void;
   align?: "left" | "right" | "center";
+  className?: string;
 }) {
   const parsed = parseSort(currentSort);
   const active = parsed?.field === field;
 
   return (
-    <Th align={align}>
+    <Th align={align} className={className}>
       <button
         type="button"
         onClick={() => onSort(field)}

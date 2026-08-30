@@ -261,15 +261,26 @@ export function UsersTable({
 
   // Each filter's current-value display text, or null when unset — drives
   // both the FilterPopover trigger's inline summary and its active styling.
+  const statusValue = status ? STATUS_TABS.find((t) => t.value === status)?.label ?? null : null;
   const expiryValue = !expiresBefore && !expiresAfter ? null : activeExpiryDays !== undefined ? `≤${activeExpiryDays}d` : "Custom";
   const creditsValue = coinMin || coinMax ? `${coinMin || "0"}–${coinMax || "∞"}` : null;
   const planValue = planId === "none" ? "No plan" : planId ? plans.find((p) => p.id === planId)?.name ?? null : null;
   const channelValue = hasWhatsapp && hasTelegram ? "WhatsApp + Telegram" : hasWhatsapp ? "WhatsApp" : hasTelegram ? "Telegram" : null;
   const windowValue = windowFilter ? WINDOW_LABELS[windowFilter] ?? null : null;
-  const anyFilterActive = !!(expiryValue || creditsValue || planValue || channelValue || windowValue);
+  const anyFilterActive = !!(statusValue || expiryValue || creditsValue || planValue || channelValue || windowValue);
 
   function clearAllFilters() {
-    navigate({ expiresBefore: null, expiresAfter: null, coinMin: null, coinMax: null, planId: null, hasWhatsapp: false, hasTelegram: false, windowFilter: null });
+    navigate({
+      status: "",
+      expiresBefore: null,
+      expiresAfter: null,
+      coinMin: null,
+      coinMax: null,
+      planId: null,
+      hasWhatsapp: false,
+      hasTelegram: false,
+      windowFilter: null,
+    });
     setCustomRangeOpen(false);
   }
 
@@ -294,36 +305,6 @@ export function UsersTable({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-warm p-1">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => navigate({ status: tab.value })}
-              className={cn(
-                "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                status === tab.value ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" className="gap-1.5" onClick={() => setBroadcastTargetIds([])} disabled={total === 0}>
-            <Megaphone className="size-4" strokeWidth={2} />
-            Broadcast to filtered
-          </Button>
-          <a href={`/admin/users/export?${searchParams.toString()}`}>
-            <Button variant="secondary" className="gap-1.5">
-              <Download className="size-4" strokeWidth={2} />
-              Export CSV
-            </Button>
-          </a>
-        </div>
-      </div>
-
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -335,10 +316,19 @@ export function UsersTable({
         <TextField name="search" label="Search" placeholder="Name, email, WhatsApp or Telegram ID" defaultValue={search} />
       </form>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted-2">Filters:</span>
 
-        <FilterPopover label="Expiry" value={expiryValue} onClear={() => { navigate({ expiresBefore: null, expiresAfter: null }); setCustomRangeOpen(false); }}>
+          <FilterPopover label="Status" value={statusValue} onClear={() => navigate({ status: "" })}>
+            <div className="flex flex-col gap-1">
+              {STATUS_TABS.map((tab) => (
+                <FilterOption key={tab.value || "all"} label={tab.label} selected={status === tab.value} onClick={() => navigate({ status: tab.value })} />
+              ))}
+            </div>
+          </FilterPopover>
+
+          <FilterPopover label="Expiry" value={expiryValue} onClear={() => { navigate({ expiresBefore: null, expiresAfter: null }); setCustomRangeOpen(false); }}>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
               {EXPIRY_QUICK_FILTERS.map((f) => (
@@ -443,11 +433,25 @@ export function UsersTable({
           </div>
         </FilterPopover>
 
-        {anyFilterActive && (
-          <button type="button" onClick={clearAllFilters} className="text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
-            Clear filters
-          </button>
-        )}
+          {anyFilterActive && (
+            <button type="button" onClick={clearAllFilters} className="text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" className="gap-1.5" onClick={() => setBroadcastTargetIds([])} disabled={total === 0}>
+            <Megaphone className="size-4" strokeWidth={2} />
+            Broadcast to filtered
+          </Button>
+          <a href={`/admin/users/export?${searchParams.toString()}`}>
+            <Button variant="secondary" className="gap-1.5">
+              <Download className="size-4" strokeWidth={2} />
+              Export CSV
+            </Button>
+          </a>
+        </div>
       </div>
 
       <TableCard>
@@ -461,12 +465,26 @@ export function UsersTable({
             />
           </Th>
           <Th>User</Th>
-          <Th>Channels</Th>
-          <SortableTh field="coin_balance" label="Credits" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
-          <Th>Plan</Th>
-          <Th>Status</Th>
-          <SortableTh field="plan_expires_at" label="Expires" align="right" currentSort={sort} onSort={(f) => navigate({ sort: nextSortValue(sort, f) })} />
-          <Th align="right">Actions</Th>
+          <Th className="flex-none w-28">Channels</Th>
+          <SortableTh
+            field="coin_balance"
+            label="Credits"
+            align="right"
+            className="flex-none w-36"
+            currentSort={sort}
+            onSort={(f) => navigate({ sort: nextSortValue(sort, f) })}
+          />
+          <Th className="flex-none w-32">Plan</Th>
+          <Th className="flex-none w-28">Status</Th>
+          <SortableTh
+            field="plan_expires_at"
+            label="Expires"
+            align="right"
+            className="flex-none w-32"
+            currentSort={sort}
+            onSort={(f) => navigate({ sort: nextSortValue(sort, f) })}
+          />
+          <Th align="right" className="flex-none w-44">Actions</Th>
         </TableHeaderRow>
         {rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-muted">No users found.</p>}
         {rows.map((user) => (
@@ -494,25 +512,25 @@ export function UsersTable({
                 {user.email || (user.kind === "unlinked_user" ? "Messaged the bot, hasn't signed up" : "No email on file")}
               </div>
             </Td>
-            <Td>
+            <Td className="flex-none w-28">
               <div className="flex items-center gap-2">
                 {user.wa_id && <MessageCircle className="size-4 text-success-text" strokeWidth={2} />}
                 {user.telegram_id && <Send className="size-4 text-accent" strokeWidth={2} />}
                 {!user.wa_id && !user.telegram_id && <span className="text-xs text-muted">—</span>}
               </div>
             </Td>
-            <Td align="right">
+            <Td align="right" className="flex-none w-36">
               <div className="flex items-center justify-end gap-2">
                 {user.effective_coin_balance}
                 {user.effective_coin_balance <= lowBalanceThreshold && <Badge tone="warning">Low</Badge>}
               </div>
             </Td>
-            <Td>{user.subscription_tier || "—"}</Td>
-            <Td>
+            <Td className="flex-none w-32">{user.subscription_tier || "—"}</Td>
+            <Td className="flex-none w-28">
               {user.effective_blocked_at ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Active</Badge>}
             </Td>
-            <Td align="right">{user.effective_plan_expires_at ? formatDate(user.effective_plan_expires_at) : "—"}</Td>
-            <Td align="right">
+            <Td align="right" className="flex-none w-32">{user.effective_plan_expires_at ? formatDate(user.effective_plan_expires_at) : "—"}</Td>
+            <Td align="right" className="flex-none w-44">
               <div className="flex items-center justify-end gap-2">
                 {alertResult?.id === user.detail_user_id && (
                   <span className={cn("text-xs font-medium", alertResult.ok ? "text-success-text" : "text-danger-text")}>
