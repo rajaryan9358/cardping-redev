@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, FileText, ImageIcon, Video } from "lucide-react";
 import { TextField } from "../ui/TextField";
 import { BROADCAST_FIELD_OPTIONS, BroadcastField, SlotValue, HeaderMediaFormat } from "../../lib/broadcastFields";
 import { WhatsAppTemplate } from "../../lib/whatsappTemplates";
@@ -11,6 +11,12 @@ const HEADER_FORMAT_LABEL: Record<HeaderMediaFormat, string> = {
   IMAGE: "image",
   VIDEO: "video",
   DOCUMENT: "document",
+};
+
+const HEADER_FORMAT_ICON: Record<HeaderMediaFormat, typeof ImageIcon> = {
+  IMAGE: ImageIcon,
+  VIDEO: Video,
+  DOCUMENT: FileText,
 };
 
 /** A media-header template (IMAGE/VIDEO/DOCUMENT) needs a real, publicly
@@ -69,7 +75,7 @@ export function TemplatePicker({
               <span className="truncate text-sm font-medium text-ink">{t.name}</span>
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-2">{t.language}</span>
             </div>
-            <p className="line-clamp-2 text-xs text-muted">{t.bodyText || "No body text."}</p>
+            <p className="whitespace-pre-line text-xs text-muted">{t.bodyText || "No body text."}</p>
             {isSelected && (
               <span className="absolute right-2 top-2 flex size-4 items-center justify-center rounded-full bg-accent text-white">
                 <Check className="size-2.5" strokeWidth={3} />
@@ -86,8 +92,20 @@ export function TemplatePicker({
  * current mapping — a literal shows the admin's typed text, a field shows
  * a bracketed placeholder (e.g. "[Name]") since no single recipient is
  * known yet for a broadcast audience. Updates live as slots are edited, so
- * the admin can see roughly what recipients will receive before sending. */
-export function TemplateMessagePreview({ bodyText, slots }: { bodyText: string; slots: SlotValue[] }) {
+ * the admin can see roughly what recipients will receive before sending.
+ * Styled as an actual WhatsApp chat bubble (wallpaper backdrop, outgoing
+ * green bubble, read-receipt ticks) rather than a plain text box, since
+ * the point of a preview is recognizing what the recipient will actually
+ * see. */
+export function TemplateMessagePreview({
+  bodyText,
+  slots,
+  headerMediaFormat,
+}: {
+  bodyText: string;
+  slots: SlotValue[];
+  headerMediaFormat?: HeaderMediaFormat | null;
+}) {
   const filled = bodyText.replace(/\{\{(\d+)\}\}/g, (match, num: string) => {
     const slot = slots[Number(num) - 1];
     if (!slot) return match;
@@ -95,12 +113,27 @@ export function TemplateMessagePreview({ bodyText, slots }: { bodyText: string; 
     const label = BROADCAST_FIELD_OPTIONS.find((opt) => opt.field === slot.field)?.label ?? slot.field;
     return `[${label}]`;
   });
+  const MediaIcon = headerMediaFormat ? HEADER_FORMAT_ICON[headerMediaFormat] : null;
+  const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-semibold tracking-wide text-muted-2">Preview</label>
-      <p className="whitespace-pre-line rounded-2xl rounded-tl-sm border border-border bg-surface-warm px-3.5 py-2.5 text-sm text-ink">
-        {filled}
-      </p>
+      <div className="rounded-xl bg-[#e5ddd5] p-4">
+        <div className="ml-auto max-w-[85%] rounded-lg rounded-tr-none bg-[#d9fdd3] px-2.5 py-2 shadow-sm">
+          {MediaIcon && (
+            <div className="mb-1.5 flex h-24 items-center justify-center gap-1.5 rounded-md bg-black/5 text-xs font-medium text-black/40">
+              <MediaIcon className="size-4" strokeWidth={1.75} />
+              {HEADER_FORMAT_LABEL[headerMediaFormat!]}
+            </div>
+          )}
+          <p className="whitespace-pre-line text-sm leading-snug text-[#111b21]">{filled}</p>
+          <div className="mt-1 flex items-center justify-end gap-1">
+            <span className="text-[10px] text-black/40">{time}</span>
+            <CheckCheck className="size-3.5 text-[#53bdeb]" strokeWidth={2.5} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -110,6 +110,7 @@ export function BroadcastToUsersModal({
       open={open}
       onClose={onClose}
       title="Broadcast message"
+      className="max-w-2xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -173,7 +174,9 @@ export function BroadcastToUsersModal({
                 ) : (
                   <p className="text-xs text-muted">This template has no variables.</p>
                 )}
-                {selectedTemplate.bodyText && <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} />}
+                {selectedTemplate.bodyText && (
+                  <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} headerMediaFormat={selectedTemplate.headerMediaFormat} />
+                )}
               </div>
             )}
           </>

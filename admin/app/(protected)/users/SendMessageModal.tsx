@@ -104,6 +104,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
       open={user !== null}
       onClose={onClose}
       title={`Message ${user.full_name || "this user"}`}
+      className="max-w-2xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -170,7 +171,9 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
                 ) : (
                   <p className="text-xs text-muted">This template has no variables.</p>
                 )}
-                {selectedTemplate.bodyText && <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} />}
+                {selectedTemplate.bodyText && (
+                  <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} headerMediaFormat={selectedTemplate.headerMediaFormat} />
+                )}
               </div>
             )}
           </div>

@@ -166,7 +166,9 @@ export function BroadcastComposer() {
               ) : (
                 <p className="text-xs text-muted">This template has no variables.</p>
               )}
-              {selectedTemplate.bodyText && <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} />}
+              {selectedTemplate.bodyText && (
+                <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} headerMediaFormat={selectedTemplate.headerMediaFormat} />
+              )}
             </div>
           ) : (
             !usingDropdown && (
