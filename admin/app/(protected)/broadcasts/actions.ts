@@ -3,7 +3,7 @@
 import { requireAdmin } from "../../../lib/auth";
 import { adminBroadcastsRepo, BroadcastChannel, MANUAL_SELECTION_AUDIENCE_FILTER } from "../../../lib/repositories/adminBroadcasts.repo";
 import { AudienceFilter, AUDIENCE_FILTER_LABELS } from "../../../lib/audienceFilter";
-import { SlotValue } from "../../../lib/broadcastFields";
+import { SlotValue, HeaderMediaFormat } from "../../../lib/broadcastFields";
 import { createCampaignAndSend } from "../../../lib/broadcastCreate";
 
 export interface CreateBroadcastState {
@@ -53,7 +53,12 @@ export async function createAndSendBroadcastAction(
       return { error: "Invalid variable mapping." };
     }
     const bodyText = String(formData.get("bodyText") ?? "").trim() || null;
-    body = JSON.stringify({ languageCode, slots, bodyText });
+    const headerMediaFormat = (String(formData.get("headerMediaFormat") ?? "").trim() || null) as HeaderMediaFormat | null;
+    const headerMediaUrl = String(formData.get("headerMediaUrl") ?? "").trim() || null;
+    if (headerMediaFormat && !headerMediaUrl) {
+      return { error: `This template's header is a ${headerMediaFormat.toLowerCase()} — add a link before sending.` };
+    }
+    body = JSON.stringify({ languageCode, slots, bodyText, headerMediaFormat, headerMediaUrl });
   } else {
     body = String(formData.get("message") ?? "").trim();
     if (!body) return { error: "Enter a message." };

@@ -2,7 +2,7 @@ import "server-only";
 import { adminBroadcastsRepo, AdminCampaignRow } from "./repositories/adminBroadcasts.repo";
 import { sendTelegramBroadcastMessage, sendWhatsAppTemplate, sendWhatsAppText } from "./broadcastSend";
 import { fillTemplateBody, resolveField, sanitizeForWhatsApp, substituteTelegramTokens } from "./broadcastFieldResolver";
-import { SlotValue } from "./broadcastFields";
+import { HeaderMediaFormat, SlotValue } from "./broadcastFields";
 
 const SEND_DELAY_MS = 300;
 const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
@@ -16,22 +16,45 @@ interface WhatsAppBody {
   // the manual-template-entry fallback and for any pre-existing campaign,
   // both of which always go through the template path regardless of window.
   bodyText: string | null;
+  // Set only when the template has a media header — every template send
+  // (never the free-text within-24h fallback, which has no media support)
+  // needs this or Meta rejects the whole message. null for any campaign
+  // created before header support existed, or a body-only template.
+  headerMediaFormat: HeaderMediaFormat | null;
+  headerMediaUrl: string | null;
 }
 
 // A campaign created before per-recipient variables shipped has body
 // shape {languageCode, variables: string[]} — every slot was a literal,
-// campaign-wide string, and bodyText didn't exist yet. Resending one of
-// these must keep working, so a legacy `variables` array is treated as
-// all-literal slots (with no known bodyText) rather than rejected outright.
+// campaign-wide string, and bodyText/header fields didn't exist yet.
+// Resending one of these must keep working, so a legacy `variables` array
+// is treated as all-literal slots (with no known bodyText/header) rather
+// than rejected outright.
 function normalizeWhatsAppBody(parsed: {
   languageCode: string;
   slots?: SlotValue[];
   variables?: string[];
   bodyText?: string | null;
+  headerMediaFormat?: HeaderMediaFormat | null;
+  headerMediaUrl?: string | null;
 }): WhatsAppBody {
-  if (parsed.slots) return { languageCode: parsed.languageCode, slots: parsed.slots, bodyText: parsed.bodyText ?? null };
+  if (parsed.slots) {
+    return {
+      languageCode: parsed.languageCode,
+      slots: parsed.slots,
+      bodyText: parsed.bodyText ?? null,
+      headerMediaFormat: parsed.headerMediaFormat ?? null,
+      headerMediaUrl: parsed.headerMediaUrl ?? null,
+    };
+  }
   const variables = parsed.variables ?? [];
-  return { languageCode: parsed.languageCode, slots: variables.map((value) => ({ type: "literal", value })), bodyText: null };
+  return {
+    languageCode: parsed.languageCode,
+    slots: variables.map((value) => ({ type: "literal", value })),
+    bodyText: null,
+    headerMediaFormat: null,
+    headerMediaUrl: null,
+  };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -81,7 +104,12 @@ export async function runBroadcastCampaign(
           slot.type === "literal" ? sanitizeForWhatsApp(slot.value) : resolveField(slot.field, recipient, planNamesById),
         );
         const within24h = recipient.last_login && Date.now() - new Date(recipient.last_login).getTime() < WITHIN_24H_MS;
-        if (within24h && whatsAppBody.bodyText) {
+        // A media header has no free-text equivalent (sendWhatsAppText
+        // can't attach a video/image/document), so a media-header template
+        // always goes through the formal template path regardless of
+        // window — the within-24h shortcut only applies to body-only
+        // templates.
+        if (within24h && whatsAppBody.bodyText && !whatsAppBody.headerMediaFormat) {
           // Inside the window, free text is both allowed and more natural
           // than the formal template mechanism — same content, friendlier
           // delivery. A mixed audience (some recipients active recently,
@@ -89,7 +117,11 @@ export async function runBroadcastCampaign(
           // once for the whole campaign.
           await sendWhatsAppText(to, fillTemplateBody(whatsAppBody.bodyText, variables));
         } else {
-          await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, variables);
+          const header =
+            whatsAppBody.headerMediaFormat && whatsAppBody.headerMediaUrl
+              ? { format: whatsAppBody.headerMediaFormat, link: whatsAppBody.headerMediaUrl }
+              : null;
+          await sendWhatsAppTemplate(to, templateName, whatsAppBody.languageCode, variables, header);
         }
       } else {
         const chatId = recipient.telegram_chat_id;

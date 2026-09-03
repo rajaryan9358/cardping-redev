@@ -4,7 +4,7 @@ import { requireAdmin } from "../../../lib/auth";
 import { adminUsersRepo, ListUsersFilterParams } from "../../../lib/repositories/adminUsers.repo";
 import { BroadcastChannel, MANUAL_SELECTION_AUDIENCE_FILTER } from "../../../lib/repositories/adminBroadcasts.repo";
 import { createCampaignAndSend } from "../../../lib/broadcastCreate";
-import { SlotValue } from "../../../lib/broadcastFields";
+import { SlotValue, HeaderMediaFormat } from "../../../lib/broadcastFields";
 
 export type BroadcastSource = "accounts" | "whatsapp_contacts" | "telegram_contacts";
 
@@ -24,6 +24,10 @@ export interface BroadcastToUsersInput {
   /** WhatsApp only. */
   slots?: SlotValue[];
   bodyText?: string | null;
+  /** WhatsApp only, and only when the selected template has a media
+   * header — every send needs a real link then, or Meta rejects it. */
+  headerMediaFormat?: HeaderMediaFormat | null;
+  headerMediaUrl?: string | null;
   /** Telegram only. */
   message?: string;
 }
@@ -59,7 +63,18 @@ export async function broadcastToUsersAction(input: BroadcastToUsersInput): Prom
   let body: string;
   if (input.channel === "whatsapp") {
     if (!input.templateName) return { error: "Choose or enter the approved template name." };
-    body = JSON.stringify({ languageCode: input.languageCode || "en", slots: input.slots ?? [], bodyText: input.bodyText ?? null });
+    const headerMediaFormat = input.headerMediaFormat ?? null;
+    const headerMediaUrl = input.headerMediaUrl ?? null;
+    if (headerMediaFormat && !headerMediaUrl) {
+      return { error: `This template's header is a ${headerMediaFormat.toLowerCase()} — add a link before sending.` };
+    }
+    body = JSON.stringify({
+      languageCode: input.languageCode || "en",
+      slots: input.slots ?? [],
+      bodyText: input.bodyText ?? null,
+      headerMediaFormat,
+      headerMediaUrl,
+    });
   } else {
     if (!input.message?.trim()) return { error: "Enter a message." };
     body = input.message.trim();

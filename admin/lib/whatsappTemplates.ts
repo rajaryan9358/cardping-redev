@@ -1,5 +1,6 @@
 import "server-only";
 import { appEnvFiles } from "./appEnvFiles";
+import { HeaderMediaFormat } from "./broadcastFields";
 
 export interface WhatsAppTemplate {
   name: string;
@@ -12,28 +13,45 @@ export interface WhatsAppTemplate {
   // numbers slots sequentially from 1 with no gaps, so the count of
   // distinct numbers found IS the slot count.
   variableCount: number;
+  // Set only when the template has a HEADER component whose format is
+  // media (IMAGE/VIDEO/DOCUMENT) — that header requires a real media
+  // reference on every single send (the example media submitted for
+  // approval is preview-only, never reused automatically). null for a
+  // template with no header, a plain TEXT header, or an unrecognized
+  // format — none of those need anything collected from the composer.
+  headerMediaFormat: HeaderMediaFormat | null;
 }
 
 interface TemplateComponent {
   type?: string;
+  format?: string;
   text?: string;
 }
 
-/** Finds the BODY component's text and counts its {{n}} slots — the
- * `fields` param below now requests `components`, which the old
- * name/language/category-only fetch never did, so this data simply
- * didn't exist in the app before (see BroadcastComposer's template-body
- * preview + per-slot field mapping). */
-function parseBodySlots(components: unknown): { bodyText: string | null; variableCount: number } {
-  if (!Array.isArray(components)) return { bodyText: null, variableCount: 0 };
-  const body = (components as TemplateComponent[]).find((c) => c.type === "BODY");
-  if (!body?.text) return { bodyText: null, variableCount: 0 };
+const MEDIA_HEADER_FORMATS: readonly string[] = ["IMAGE", "VIDEO", "DOCUMENT"];
 
+/** Finds the BODY component's text and counts its {{n}} slots, and the
+ * HEADER component's media format if it has one — the `fields` param
+ * below requests `components`, which the old name/language/category-only
+ * fetch never did, so this data simply didn't exist in the app before
+ * (see BroadcastComposer's template-body preview + per-slot field
+ * mapping, and the header-media-link input this feeds). */
+function parseComponents(components: unknown): { bodyText: string | null; variableCount: number; headerMediaFormat: HeaderMediaFormat | null } {
+  if (!Array.isArray(components)) return { bodyText: null, variableCount: 0, headerMediaFormat: null };
+  const typed = components as TemplateComponent[];
+
+  const body = typed.find((c) => c.type === "BODY");
   const slotNumbers = new Set<number>();
-  for (const match of body.text.matchAll(/\{\{(\d+)\}\}/g)) {
-    slotNumbers.add(Number(match[1]));
+  if (body?.text) {
+    for (const match of body.text.matchAll(/\{\{(\d+)\}\}/g)) {
+      slotNumbers.add(Number(match[1]));
+    }
   }
-  return { bodyText: body.text, variableCount: slotNumbers.size };
+
+  const header = typed.find((c) => c.type === "HEADER");
+  const headerMediaFormat = header?.format && MEDIA_HEADER_FORMATS.includes(header.format) ? (header.format as HeaderMediaFormat) : null;
+
+  return { bodyText: body?.text ?? null, variableCount: slotNumbers.size, headerMediaFormat };
 }
 
 /** Lists Meta-approved WhatsApp Message Templates for the Broadcasts/
@@ -61,7 +79,7 @@ export async function listApprovedTemplates(): Promise<WhatsAppTemplate[]> {
     const data = (body.data ?? []) as { name: string; language: string; status: string; category: string; components?: unknown }[];
     return data
       .filter((t) => t.status === "APPROVED")
-      .map((t) => ({ name: t.name, language: t.language, category: t.category, ...parseBodySlots(t.components) }));
+      .map((t) => ({ name: t.name, language: t.language, category: t.category, ...parseComponents(t.components) }));
   } catch {
     return [];
   }

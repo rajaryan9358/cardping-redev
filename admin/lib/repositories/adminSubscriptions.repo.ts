@@ -75,36 +75,99 @@ export interface EarningTransactionRow {
   id: string;
   amount_inr: number;
   created_at: string;
+  type: EarningType;
   full_name: string | null;
   email: string | null;
+  /** /users/<id> target for "View account" — a linked channel identity for
+   * the paying account, or (legacy rows) the users.id the transaction was
+   * recorded against directly. null when there's genuinely nothing to
+   * view (an account with no channel linked to it at all). */
+  detail_user_id: string | null;
 }
 
-/** Backs the "Total earning" stat card's detail view — same two revenue
- * types as getSubscriptionSummary, but listable/filterable by date range
- * and split per-type instead of pre-summed. Sum is computed by fetching
- * every matching row's amount (not a DB-side aggregate) — same
- * simple-scale tradeoff already used elsewhere in this app (see
- * getSubscriptionSummary above). */
+interface EarningTransactionsFilter {
+  type?: EarningType;
+  from?: string;
+  to?: string;
+}
+
+type RawEarningRow = {
+  id: string;
+  amount_inr: number | string | null;
+  created_at: string;
+  type: EarningType;
+  user_id: string | null;
+  account_id: string | null;
+  accounts: { full_name: string | null; email: string | null } | null;
+  users: { full_name: string | null; email: string | null } | null;
+};
+
+/** Resolves each row's "View account" target in one batch — an
+ * account_id needs a hop through channel_links (the admin app's only
+ * detail page is per-channel-identity, not per-account, same reasoning as
+ * listSubscribedUsers' detail_user_id); a bare user_id (legacy, pre-account
+ * transactions) already is the right id. */
+async function resolveDetailUserIds(rows: RawEarningRow[]): Promise<Map<string, string | null>> {
+  const accountIds = Array.from(new Set(rows.map((r) => r.account_id).filter((id): id is string => !!id)));
+  const linkByAccount = new Map<string, string>();
+  if (accountIds.length > 0) {
+    const { data, error } = await supabase
+      .from("channel_links")
+      .select("account_id, users_id")
+      .in("account_id", accountIds)
+      .is("unlinked_at", null);
+    if (error) throw error;
+    for (const link of data ?? []) {
+      if (!linkByAccount.has(link.account_id)) linkByAccount.set(link.account_id, link.users_id);
+    }
+  }
+  const result = new Map<string, string | null>();
+  for (const row of rows) {
+    result.set(row.id, row.account_id ? linkByAccount.get(row.account_id) ?? null : row.user_id);
+  }
+  return result;
+}
+
+function mapEarningRows(rows: RawEarningRow[], detailIds: Map<string, string | null>): EarningTransactionRow[] {
+  return rows.map((row) => ({
+    id: row.id,
+    amount_inr: Number(row.amount_inr ?? 0),
+    created_at: row.created_at,
+    type: row.type,
+    full_name: row.accounts?.full_name ?? row.users?.full_name ?? null,
+    email: row.accounts?.email ?? row.users?.email ?? null,
+    detail_user_id: detailIds.get(row.id) ?? null,
+  }));
+}
+
+/** Backs the Total Earnings page — every completed subscription-payment or
+ * coin-purchase transaction, filterable by type and date range. Sum is
+ * computed by fetching every matching row's amount (not a DB-side
+ * aggregate) — same simple-scale tradeoff already used elsewhere in this
+ * app (see getSubscriptionSummary above). */
 async function listEarningTransactions({
   type,
   from,
   to,
   page,
   pageSize,
-}: {
-  type: EarningType;
-  from?: string;
-  to?: string;
+}: EarningTransactionsFilter & {
   page: number;
   pageSize: number;
 }): Promise<{ rows: EarningTransactionRow[]; total: number; sumInr: number }> {
   let rowsQuery = supabase
     .from("transactions")
-    .select("id, amount_inr, created_at, accounts(full_name, email)", { count: "exact" })
-    .eq("type", type)
+    .select("id, amount_inr, created_at, type, user_id, account_id, accounts(full_name, email), users(full_name, email)", {
+      count: "exact",
+    })
+    .in("type", type ? [type] : ["subscription_payment", "coin_purchase"])
     .eq("status", "completed")
     .order("created_at", { ascending: false });
-  let sumQuery = supabase.from("transactions").select("amount_inr").eq("type", type).eq("status", "completed");
+  let sumQuery = supabase
+    .from("transactions")
+    .select("amount_inr")
+    .in("type", type ? [type] : ["subscription_payment", "coin_purchase"])
+    .eq("status", "completed");
 
   if (from) {
     rowsQuery = rowsQuery.gte("created_at", from);
@@ -122,19 +185,31 @@ async function listEarningTransactions({
   if (error) throw error;
   if (sumRes.error) throw sumRes.error;
 
-  const rows: EarningTransactionRow[] = (data ?? []).map((row) => {
-    const account = row.accounts as unknown as { full_name: string | null; email: string | null } | null;
-    return {
-      id: row.id,
-      amount_inr: Number(row.amount_inr ?? 0),
-      created_at: row.created_at,
-      full_name: account?.full_name ?? null,
-      email: account?.email ?? null,
-    };
-  });
+  const rawRows = (data ?? []) as unknown as RawEarningRow[];
+  const detailIds = await resolveDetailUserIds(rawRows);
   const sumInr = (sumRes.data ?? []).reduce((sum, r) => sum + Number(r.amount_inr ?? 0), 0);
 
-  return { rows, total: count ?? 0, sumInr };
+  return { rows: mapEarningRows(rawRows, detailIds), total: count ?? 0, sumInr };
+}
+
+/** Same filtering as listEarningTransactions, unpaginated — backs the
+ * Total Earnings page's CSV export. Small admin scale, same tradeoff as
+ * listUsersForExport. */
+async function listEarningTransactionsForExport(filter: EarningTransactionsFilter): Promise<EarningTransactionRow[]> {
+  let query = supabase
+    .from("transactions")
+    .select("id, amount_inr, created_at, type, user_id, account_id, accounts(full_name, email), users(full_name, email)")
+    .in("type", filter.type ? [filter.type] : ["subscription_payment", "coin_purchase"])
+    .eq("status", "completed")
+    .order("created_at", { ascending: false });
+  if (filter.from) query = query.gte("created_at", filter.from);
+  if (filter.to) query = query.lte("created_at", filter.to);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const rawRows = (data ?? []) as unknown as RawEarningRow[];
+  const detailIds = await resolveDetailUserIds(rawRows);
+  return mapEarningRows(rawRows, detailIds);
 }
 
 export interface SubscribedUserRow {
@@ -507,6 +582,7 @@ export const adminSubscriptionsRepo = {
   listPlans,
   getSubscriptionSummary,
   listEarningTransactions,
+  listEarningTransactionsForExport,
   listSubscribedUsers,
   setUserPlan,
   clearUserPlan,

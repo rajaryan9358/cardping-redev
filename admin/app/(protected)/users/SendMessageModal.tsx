@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
-import { TemplateBodyPreview, SlotRow } from "../../../components/broadcasts/TemplateSlots";
+import { TemplatePicker, TemplateMessagePreview, SlotRow, HeaderMediaLinkInput } from "../../../components/broadcasts/TemplateSlots";
 import { SlotValue } from "../../../lib/broadcastFields";
 import { WhatsAppTemplate } from "../../../lib/whatsappTemplates";
 import { formatDate } from "../../../lib/format";
@@ -39,6 +39,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
   const [templates, setTemplates] = useState<WhatsAppTemplate[] | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
   const [slots, setSlots] = useState<SlotValue[]>([]);
+  const [headerMediaUrl, setHeaderMediaUrl] = useState("");
   const [manualTemplate, setManualTemplate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
     setTemplates(null);
     setSelectedTemplate(null);
     setSlots([]);
+    setHeaderMediaUrl("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
@@ -69,6 +71,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
   function selectTemplate(t: WhatsAppTemplate | null) {
     setSelectedTemplate(t);
     setSlots(t ? Array.from({ length: t.variableCount }, () => ({ type: "literal", value: "" })) : []);
+    setHeaderMediaUrl("");
   }
 
   function updateSlot(index: number, next: SlotValue) {
@@ -85,6 +88,8 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
         templateName: needsTemplate ? (usingDropdown ? selectedTemplate?.name : manualTemplate) : undefined,
         languageCode: selectedTemplate?.language,
         slots: needsTemplate && usingDropdown ? slots : undefined,
+        headerMediaFormat: needsTemplate && usingDropdown ? selectedTemplate?.headerMediaFormat ?? null : undefined,
+        headerMediaUrl: needsTemplate && usingDropdown ? headerMediaUrl : undefined,
       });
       onClose();
     } catch (e) {
@@ -136,21 +141,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
               {templates === null ? (
                 <p className="text-sm text-muted">Loading templates…</p>
               ) : usingDropdown ? (
-                <select
-                  value={selectedTemplate ? `${selectedTemplate.name}:${selectedTemplate.language}` : ""}
-                  onChange={(e) => {
-                    const t = templates.find((tpl) => `${tpl.name}:${tpl.language}` === e.target.value);
-                    selectTemplate(t ?? null);
-                  }}
-                  className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-                >
-                  <option value="">Select a template</option>
-                  {templates.map((t) => (
-                    <option key={`${t.name}:${t.language}`} value={`${t.name}:${t.language}`}>
-                      {t.name} ({t.language})
-                    </option>
-                  ))}
-                </select>
+                <TemplatePicker templates={templates} selected={selectedTemplate} onSelect={selectTemplate} />
               ) : (
                 <>
                   <p className="text-xs text-muted">No templates found — enter the name manually.</p>
@@ -166,7 +157,9 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
 
             {usingDropdown && selectedTemplate && (
               <div className="flex flex-col gap-3">
-                {selectedTemplate.bodyText && <TemplateBodyPreview bodyText={selectedTemplate.bodyText} />}
+                {selectedTemplate.headerMediaFormat && (
+                  <HeaderMediaLinkInput format={selectedTemplate.headerMediaFormat} value={headerMediaUrl} onChange={setHeaderMediaUrl} />
+                )}
                 {slots.length > 0 ? (
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold tracking-wide text-muted-2">Variables</label>
@@ -177,6 +170,7 @@ export function SendMessageModal({ user, onClose }: { user: SendMessageTarget | 
                 ) : (
                   <p className="text-xs text-muted">This template has no variables.</p>
                 )}
+                {selectedTemplate.bodyText && <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} />}
               </div>
             )}
           </div>

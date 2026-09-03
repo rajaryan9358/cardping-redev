@@ -24,3 +24,24 @@ export const BROADCAST_FIELD_OPTIONS: FieldOption[] = [
 // recipient at send time. No meaningful "half literal, half field" state
 // for a single Meta template parameter.
 export type SlotValue = { type: "literal"; value: string } | { type: "field"; field: BroadcastField };
+
+// Lives here (not whatsappTemplates.ts, which is server-only) so the
+// client-side composers can reference it without pulling a server-only
+// module into the client bundle.
+export type HeaderMediaFormat = "IMAGE" | "VIDEO" | "DOCUMENT";
+
+// The full shape stored in broadcast_campaigns.body for a WhatsApp
+// campaign (JSON-encoded) — see broadcastJob.ts's normalizeWhatsAppBody
+// for the legacy-shape fallback this also has to stay compatible with.
+export interface WhatsAppBodyPayload {
+  languageCode: string;
+  slots: SlotValue[];
+  // null for the manual-template-entry fallback and any pre-existing
+  // campaign — both always go through the formal template send
+  // regardless of the recipient's 24h window (see broadcastJob.ts).
+  bodyText: string | null;
+  // Present only when the template has a media header — every send then
+  // needs headerMediaUrl to be non-empty, or Meta rejects it.
+  headerMediaFormat: HeaderMediaFormat | null;
+  headerMediaUrl: string | null;
+}

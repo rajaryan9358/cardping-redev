@@ -5,7 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { TextField } from "../../../components/ui/TextField";
-import { TemplateBodyPreview, SlotRow } from "../../../components/broadcasts/TemplateSlots";
+import { TemplatePicker, TemplateMessagePreview, SlotRow, HeaderMediaLinkInput } from "../../../components/broadcasts/TemplateSlots";
 import { AUDIENCE_FILTER_LABELS, AudienceFilter } from "../../../lib/audienceFilter";
 import { BROADCAST_FIELD_OPTIONS, BroadcastField, SlotValue } from "../../../lib/broadcastFields";
 import { WhatsAppTemplate } from "../../../lib/whatsappTemplates";
@@ -31,6 +31,7 @@ export function BroadcastComposer() {
   const [manualTemplateName, setManualTemplateName] = useState("");
   const [manualLanguage, setManualLanguage] = useState("en");
   const [slots, setSlots] = useState<SlotValue[]>([]);
+  const [headerMediaUrl, setHeaderMediaUrl] = useState("");
   const [manualVariables, setManualVariables] = useState("");
   const [message, setMessage] = useState("");
   const [state, formAction] = useFormState(createAndSendBroadcastAction, initialState);
@@ -48,6 +49,7 @@ export function BroadcastComposer() {
   function selectTemplate(t: WhatsAppTemplate | null) {
     setSelectedTemplate(t);
     setSlots(t ? Array.from({ length: t.variableCount }, () => ({ type: "literal", value: "" })) : []);
+    setHeaderMediaUrl("");
   }
 
   function updateSlot(index: number, next: SlotValue) {
@@ -96,6 +98,8 @@ export function BroadcastComposer() {
           recipients of that campaign always go through the formal
           template send regardless of their 24h window (see broadcastJob.ts). */}
       <input type="hidden" name="bodyText" value={usingDropdown ? selectedTemplate?.bodyText ?? "" : ""} />
+      <input type="hidden" name="headerMediaFormat" value={usingDropdown ? selectedTemplate?.headerMediaFormat ?? "" : ""} />
+      <input type="hidden" name="headerMediaUrl" value={headerMediaUrl} />
 
       <div className="flex flex-col gap-2">
         <label className="text-xs font-semibold tracking-wide text-muted-2">Audience</label>
@@ -128,21 +132,7 @@ export function BroadcastComposer() {
             {templates === null ? (
               <p className="text-sm text-muted">Loading templates…</p>
             ) : usingDropdown ? (
-              <select
-                value={selectedTemplate ? `${selectedTemplate.name}:${selectedTemplate.language}` : ""}
-                onChange={(e) => {
-                  const t = templates.find((tpl) => `${tpl.name}:${tpl.language}` === e.target.value);
-                  selectTemplate(t ?? null);
-                }}
-                className="rounded-lg border border-border bg-surface-warm px-3 py-2 text-sm text-ink"
-              >
-                <option value="">Select a template</option>
-                {templates.map((t) => (
-                  <option key={`${t.name}:${t.language}`} value={`${t.name}:${t.language}`}>
-                    {t.name} ({t.language})
-                  </option>
-                ))}
-              </select>
+              <TemplatePicker templates={templates} selected={selectedTemplate} onSelect={selectTemplate} />
             ) : (
               <>
                 <p className="text-xs text-muted">No templates found — enter one manually.</p>
@@ -163,7 +153,9 @@ export function BroadcastComposer() {
 
           {usingDropdown && selectedTemplate ? (
             <div className="flex flex-col gap-3">
-              {selectedTemplate.bodyText && <TemplateBodyPreview bodyText={selectedTemplate.bodyText} />}
+              {selectedTemplate.headerMediaFormat && (
+                <HeaderMediaLinkInput format={selectedTemplate.headerMediaFormat} value={headerMediaUrl} onChange={setHeaderMediaUrl} />
+              )}
               {slots.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold tracking-wide text-muted-2">Variables</label>
@@ -174,6 +166,7 @@ export function BroadcastComposer() {
               ) : (
                 <p className="text-xs text-muted">This template has no variables.</p>
               )}
+              {selectedTemplate.bodyText && <TemplateMessagePreview bodyText={selectedTemplate.bodyText} slots={slots} />}
             </div>
           ) : (
             !usingDropdown && (

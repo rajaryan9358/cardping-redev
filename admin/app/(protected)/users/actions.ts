@@ -7,7 +7,7 @@ import { adminBroadcastsRepo, BroadcastHistoryEntry } from "../../../lib/reposit
 import { writeAuditLog } from "../../../lib/auditLog";
 import { sendNotification } from "../../../lib/notificationSend";
 import { sendWhatsAppTemplate, sendWhatsAppText, sendTelegramBroadcastMessage } from "../../../lib/broadcastSend";
-import { SlotValue } from "../../../lib/broadcastFields";
+import { SlotValue, HeaderMediaFormat } from "../../../lib/broadcastFields";
 import { resolveField, sanitizeForWhatsApp } from "../../../lib/broadcastFieldResolver";
 
 const WITHIN_24H_MS = 24 * 60 * 60 * 1000;
@@ -23,6 +23,10 @@ export interface SendMessageInput {
    * same shape the broadcast composer collects. Omitted (or empty) for a
    * manually-typed template name, where the slot count isn't known. */
   slots?: SlotValue[];
+  /** Only when the picked template has a media header — required then, or
+   * Meta rejects the send. */
+  headerMediaFormat?: HeaderMediaFormat | null;
+  headerMediaUrl?: string | null;
 }
 
 export async function sendMessageAction(userId: string, input: SendMessageInput): Promise<void> {
@@ -44,6 +48,9 @@ export async function sendMessageAction(userId: string, input: SendMessageInput)
       await sendWhatsAppText(waId, input.body.trim());
     } else {
       if (!input.templateName) throw new Error("This user is outside the 24h window — pick a template.");
+      if (input.headerMediaFormat && !input.headerMediaUrl?.trim()) {
+        throw new Error(`This template's header is a ${input.headerMediaFormat.toLowerCase()} — add a link before sending.`);
+      }
       // Resolved here, not in the modal — the modal only knows the slot
       // mapping (literal text or "use this field"); the actual field
       // values (this user's real name/credits/plan) only need to be known
@@ -59,7 +66,8 @@ export async function sendMessageAction(userId: string, input: SendMessageInput)
       const variables = (input.slots ?? []).map((slot) =>
         slot.type === "literal" ? sanitizeForWhatsApp(slot.value) : resolveField(slot.field, recipient, planNamesById),
       );
-      await sendWhatsAppTemplate(waId, input.templateName, input.languageCode || "en", variables);
+      const header = input.headerMediaFormat && input.headerMediaUrl ? { format: input.headerMediaFormat, link: input.headerMediaUrl } : null;
+      await sendWhatsAppTemplate(waId, input.templateName, input.languageCode || "en", variables, header);
     }
   }
 

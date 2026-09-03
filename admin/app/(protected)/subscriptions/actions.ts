@@ -2,30 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "../../../lib/auth";
-import {
-  adminSubscriptionsRepo,
-  EarningTransactionRow,
-  EarningType,
-  PlanInput,
-  TopUpInput,
-} from "../../../lib/repositories/adminSubscriptions.repo";
+import { adminSubscriptionsRepo, PlanInput, TopUpInput } from "../../../lib/repositories/adminSubscriptions.repo";
 import { adminUsersRepo } from "../../../lib/repositories/adminUsers.repo";
 import { writeAuditLog } from "../../../lib/auditLog";
 import { sendNotification } from "../../../lib/notificationSend";
-
-/** Backs the "Total earning" detail modal — a read, not a mutation, but
- * routed through a Server Action anyway (same as every other data access
- * this client-interactive page triggers) rather than a new API route. */
-export async function getEarningTransactionsAction(params: {
-  type: EarningType;
-  from?: string;
-  to?: string;
-  page: number;
-  pageSize: number;
-}): Promise<{ rows: EarningTransactionRow[]; total: number; sumInr: number }> {
-  await requireAdmin();
-  return adminSubscriptionsRepo.listEarningTransactions(params);
-}
 
 export async function setUserPlanAction(userId: string, planId: string): Promise<void> {
   const admin = await requireAdmin();

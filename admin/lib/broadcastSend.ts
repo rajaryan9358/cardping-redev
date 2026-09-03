@@ -1,5 +1,11 @@
 import "server-only";
 import { appEnvFiles } from "./appEnvFiles";
+import { HeaderMediaFormat } from "./broadcastFields";
+
+export interface HeaderMedia {
+  format: HeaderMediaFormat;
+  link: string;
+}
 
 // Same duplication rationale as lib/vision.ts: a thin send client, kept in
 // admin/ only, reading the actual WhatsApp/Telegram tokens out of
@@ -9,6 +15,7 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   languageCode: string,
   variables: string[],
+  header?: HeaderMedia | null,
 ): Promise<void> {
   const [token, phoneNumberId, apiVersion] = await Promise.all([
     appEnvFiles.readEnvValue("server", "WHATSAPP_ACCESS_TOKEN"),
@@ -17,10 +24,20 @@ export async function sendWhatsAppTemplate(
   ]);
   if (!token || !phoneNumberId) throw new Error("WhatsApp credentials not found in server/.env");
 
-  const components =
-    variables.length > 0
-      ? [{ type: "body", parameters: variables.map((text) => ({ type: "text", text })) }]
-      : undefined;
+  // Order matters — Meta expects components in the same order they appear
+  // in the template definition itself (HEADER, then BODY). The example
+  // media submitted for a media-header template's approval is
+  // preview-only and never reused automatically — every send needs a real
+  // media reference supplied here, or Meta rejects it with "(#132012)
+  // header component parameter should not be empty".
+  const components: Record<string, unknown>[] = [];
+  if (header) {
+    const mediaType = header.format.toLowerCase();
+    components.push({ type: "header", parameters: [{ type: mediaType, [mediaType]: { link: header.link } }] });
+  }
+  if (variables.length > 0) {
+    components.push({ type: "body", parameters: variables.map((text) => ({ type: "text", text })) });
+  }
 
   const response = await fetch(
     `https://graph.facebook.com/${apiVersion || "v23.0"}/${phoneNumberId}/messages`,
@@ -31,7 +48,7 @@ export async function sendWhatsAppTemplate(
         messaging_product: "whatsapp",
         to,
         type: "template",
-        template: { name: templateName, language: { code: languageCode }, ...(components ? { components } : {}) },
+        template: { name: templateName, language: { code: languageCode }, ...(components.length > 0 ? { components } : {}) },
       }),
     },
   );
